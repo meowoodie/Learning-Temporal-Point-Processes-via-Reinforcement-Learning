@@ -34,15 +34,16 @@ class ImitPP(object):
 		initial_state = self.rnn_cell.zero_state(batch_size, dtype=tf.float32)
 		
 		# final_output has shape [batch_size, sequence_len=1, feature_size]
-		self.final_state = tf.scan(
+		# final_state has shape [sequence_len, batch_size, state_size]
+		self.final_output, self.final_state = tf.scan(
 			# a[0]: rnn_outputs
 			# a[1]: state
 			# x: element in input data
-			lambda a, x: self.dynamic_rnn_unit(x, a), 
+			lambda a, x: self.dynamic_rnn_unit(x, a[1]), 
 			# iterate the element [batch_size, feature_size] of sequence in input data
 			seqs,
 			# Initial rnn_output and state
-			initializer=initial_state)
+			initializer=(np.zeros((batch_size, 1, state_size), dtype=np.float32), initial_state))
 
 		self.init = tf.global_variables_initializer()
 
@@ -64,7 +65,7 @@ class ImitPP(object):
 		# action = sigma * tf.sqrt(-2 * tf.random_uniform( tf.shape(sigma), minval=0, maxval=1) )
 
 
-		return cur_state
+		return rnn_outputs, cur_state
 
 
 if __name__ == "__main__":
@@ -72,7 +73,7 @@ if __name__ == "__main__":
 	batch_size   = 2
 	state_size   = 3
 	seq_len      = 5
-	feature_size = 1
+	feature_size = 7
 
 	tf.set_random_seed(100)
 
@@ -99,13 +100,24 @@ if __name__ == "__main__":
 		# 	[rnn_outputs, state], 
 		# 	feed_dict={rnn_input: [[[1],[2],[3],[4],[5]], [[5],[4],[3],[2],[1]]]})
 
-		imitpp = ImitPP()
+		imitpp = ImitPP(feature_size=feature_size)
 		sess.run(imitpp.init)
-		test_state = sess.run(
-			[imitpp.final_state],
-			feed_dict={imitpp.input_data: [[[1],[2],[3],[4],[5]], [[5],[4],[3],[2],[1]]]})
+		test_output, test_state = sess.run(
+			[imitpp.final_output, imitpp.final_state],
+			feed_dict={imitpp.input_data: [
+			[[1,1,1,1,1,1,1],
+			 [2,2,2,2,2,2,2],
+			 [3,3,3,3,3,3,3],
+			 [4,4,4,4,4,4,4],
+			 [5,5,5,5,5,5,5]], 
+			[[1,1,1,1,1,1,1],
+			 [2,2,2,2,2,2,2],
+			 [3,3,3,3,3,3,3],
+			 [4,4,4,4,4,4,4],
+			 [5,5,5,5,5,5,5]]]})
 
-		print "test state"
+		print test_output
+		
 		print test_state
 
 	
