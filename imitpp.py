@@ -16,9 +16,6 @@ import tensorflow as tf
 class PointProcessGenerater(object):
 	"""
 
-	For your information: 
-	action has shape [batch_size, feature_size]
-	state has shape  [batch_size, state_size]
 	"""
 
 	def __init__(self, seq_len=5, state_size=3, batch_size=2, feature_size=1):
@@ -89,6 +86,9 @@ class PointProcessGenerater(object):
 		"""
 		# reshape previous action to make it fit in the input of rnn
 		# [num_seq, feature_size] -> [num_seq, 1, feature_size]
+		# here 1 means the length of input sequence for dynamic_rnn is 1 
+		# because we repeatedly utilize only one step of dynamic_rnn for 
+		# each iteraton to realize our customized rnn
 		rnn_input = tf.reshape(prv_action, [num_seq, 1, self.feature_size])
 
 		_, cur_state = tf.nn.dynamic_rnn(self.rnn_cell, rnn_input,
@@ -100,7 +100,7 @@ class PointProcessGenerater(object):
 		b = tf.get_variable("b_r", [self.feature_size], initializer=tf.constant_initializer(0.0))
 		sigma = tf.nn.elu(tf.matmul(cur_state, W) + b) + 1
 		stoch_action = sigma * tf.sqrt(-2 * tf.log(tf.random_uniform(tf.shape(sigma), minval=0, maxval=1)))
-		cur_action = tf.add(prv_action, sigma)
+		cur_action = tf.add(prv_action, stoch_action)
 		# action has shape [num_seq, feature_size]
 		# state has shape  [num_seq, state_size]
 		return cur_action, cur_state
@@ -137,6 +137,21 @@ class PointProcessGenerater(object):
 			self.input_data: [[[1], [1.5], [2], [0], [0]], [[1.1], [1.2], [2.4], [3.3], [5]], [[2], [2.2], [2.5], [3], [0]]]
 			})
 
+	# # Debug Use
+	# def debug_dynamic_rnn_unit(self, sess, num_seq):
+
+	# 	prv_action = np.zeros((num_seq, self.feature_size), dtype=np.float32)
+	# 	prv_state  = self.rnn_cell.zero_state(num_seq, dtype=tf.float32)
+	# 	cur_action, cur_state = self._dynamic_rnn_unit(num_seq, prv_action, prv_state)
+	# 	# Set pretrained variable if it was existed
+	# 	init = tf.global_variables_initializer()
+	# 	sess.run(init)
+
+	# 	e = cur_action
+
+	# 	test_e = sess.run([e])
+	# 	return test_e
+
 
 
 if __name__ == "__main__":
@@ -149,10 +164,11 @@ if __name__ == "__main__":
 		ppg = PointProcessGenerater(
 			seq_len=seq_len,
 			batch_size=batch_size, 
-			state_size=state_size, 
+			state_size=state_size,
 			feature_size=feature_size)
-		imit_times, states_history = ppg.generate(sess, num_seq=2, max_t=2)
+		imit_times, states_history = ppg.generate(sess, num_seq=2, max_t=7, max_learner_len=20)
 		print imit_times
+		# print ppg.debug_dynamic_rnn_unit(sess, num_seq=5)
 
 
 
