@@ -72,6 +72,7 @@ class PointProcessGenerater(object):
 			initializer=np.zeros(self.seq_len, dtype=np.float32))
 
 		# return reward
+		#TODO: change batch_size to the median of pairwise distance
 		reward = tf.reduce_mean(tf.subtract(
 			tf.reduce_sum(self._gaussian_kernel(expert_times, t, self.batch_size), axis=1), \
 			tf.reduce_sum(self._gaussian_kernel(learner_times, t, self.batch_size), axis=1)))
@@ -162,5 +163,3 @@ class PointProcessGenerater(object):
 		#TODO: Do training process in batch
 		sess.run(self.optimizer, 
 			feed_dict={self.input_data: input_data})
-
-		print test_loss
