@@ -153,8 +153,6 @@ class PointProcessGenerater(object):
 	def train(self, sess, input_data, pretrained=False):
 		"""
 		"""
-		#TODO: Move this to optimizer
-		loss = self.loss
 
 		# Set pretrained variable if it was existed
 		if not pretrained:
@@ -162,7 +160,7 @@ class PointProcessGenerater(object):
 			sess.run(init)
 
 		#TODO: Do training process in batch
-		test_loss = sess.run([loss], feed_dict={
-			self.input_data: input_data})
+		sess.run(self.optimizer, 
+			feed_dict={self.input_data: input_data})
 
 		print test_loss
