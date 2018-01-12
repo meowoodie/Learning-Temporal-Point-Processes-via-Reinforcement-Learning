@@ -32,16 +32,30 @@ class PointProcessGenerater(object):
 		# input_data has shape [batch_size, sequence_len, feature_size]
 		self.input_data = tf.placeholder(tf.float32, shape=[batch_size, seq_len, feature_size])
 
-		# Optimizer of generator
+		# expert actions and corresponding learner actions
+		# expert_actions has shape [batch_size, seq_len, feature_size]
+		# learner_actions has shape [seq_len, batch_size, feature_size]
+		expert_actions     = self.input_data #TODO: replace input_data with a batch of input_data
+		learner_actions, _ = self._fixed_length_rnn(self.batch_size, rnn_len=self.seq_len)
+		# in order to avoid a specific bug (or flaw) triggerred by tensorflow itself
+		# here unfold matrix into a 1D list first, then apply reward function to every single element
+		# in the tensor, finally, refold the result back to a matrix with same shape with original one
+		unfold_times = tf.reshape(learner_actions[:, :, 0], [-1])
+		unfold_rewards = tf.map_fn(lambda t: self._reward(t, expert_actions, learner_actions), unfold_times)
+		refold_rewards = tf.reshape(unfold_rewards, [self.seq_len, self.batch_size])
+		# loss function
+		self.loss = tf.reduce_mean(tf.reduce_sum(refold_rewards, axis=0))
+		# optimizer
+		self.optimizer = tf.train.AdamOptimizer(learning_rate=1e-4, beta1=0.5, beta2=0.9).minimize(self.loss)
 
 	# Building Blocks of Computational Graph
 
-	def _reward(self, t, expert_actions, max_learner_len=10):
+	def _reward(self, t, expert_actions, learner_actions):
 		"""
-		expert_actions has shape [batch_size, sequence_len]
+		
 		"""
-		learner_actions, learner_states = self._fixed_length_rnn(self.batch_size, rnn_len=max_learner_len)
 		# get time (index 0 = first element of a feature vector) of last action of each expert sequence
+		# expert_actions has shape [batch_size, sequence_len]
 		expert_times    = expert_actions[:, :, 0]
 		max_times       = tf.reduce_max(expert_times, reduction_indices=[1])
 		# indices for action in batch of actions and 
@@ -57,7 +71,12 @@ class PointProcessGenerater(object):
 			action_indices,
 			initializer=np.zeros(self.seq_len, dtype=np.float32))
 
-		return expert_times, learner_times
+		# return reward
+		reward = tf.reduce_mean(tf.subtract(
+			tf.reduce_sum(self._gaussian_kernel(expert_times, t, self.batch_size), axis=1), \
+			tf.reduce_sum(self._gaussian_kernel(learner_times, t, self.batch_size), axis=1)))
+
+		return reward
 
 	def _fixed_length_rnn(self, num_seq, rnn_len):
 		"""
@@ -105,6 +124,16 @@ class PointProcessGenerater(object):
 		# state has shape  [num_seq, state_size]
 		return cur_action, cur_state
 
+	def _gaussian_kernel(self, real_t, var_t, const):
+		"""
+		"""
+		# get mask of non zero value from real_t
+		mask = tf.cast(real_t > 0.0, dtype=tf.float32)
+		# put mask on var_t in order to cancel the padding value in the real_t
+		var_t = tf.multiply(var_t, mask)
+
+		return tf.exp(- 1 * tf.square(real_t - var_t) / (2 * const))
+
 	# Available Functions
 
 	def generate(self, sess, num_seq, max_t, max_learner_len=10, pretrained=False):
@@ -121,11 +150,11 @@ class PointProcessGenerater(object):
 
 		return imit_times, states_history
 
-	def train(self, sess, expert_data, pretrained=False):
+	def train(self, sess, input_data, pretrained=False):
 		"""
 		"""
 		#TODO: Move this to optimizer
-		times, actions = self._reward(self.input_data, max_rnn_len=5)
+		loss = self.loss
 
 		# Set pretrained variable if it was existed
 		if not pretrained:
@@ -133,24 +162,10 @@ class PointProcessGenerater(object):
 			sess.run(init)
 
 		#TODO: Do training process in batch
-		test_times, test_actions = sess.run([times, actions], feed_dict={
-			self.input_data: [[[1], [1.5], [2], [0], [0]], [[1.1], [1.2], [2.4], [3.3], [5]], [[2], [2.2], [2.5], [3], [0]]]
-			})
+		test_loss = sess.run([loss], feed_dict={
+			self.input_data: input_data})
 
-	# # Debug Use
-	# def debug_dynamic_rnn_unit(self, sess, num_seq):
-
-	# 	prv_action = np.zeros((num_seq, self.feature_size), dtype=np.float32)
-	# 	prv_state  = self.rnn_cell.zero_state(num_seq, dtype=tf.float32)
-	# 	cur_action, cur_state = self._dynamic_rnn_unit(num_seq, prv_action, prv_state)
-	# 	# Set pretrained variable if it was existed
-	# 	init = tf.global_variables_initializer()
-	# 	sess.run(init)
-
-	# 	e = cur_action
-
-	# 	test_e = sess.run([e])
-	# 	return test_e
+		print test_loss
 
 
 
@@ -159,6 +174,7 @@ if __name__ == "__main__":
 	batch_size   = 3
 	state_size   = 4
 	feature_size = 1
+	input_data   = [[[1], [1.5], [2], [0], [0]], [[1.1], [1.2], [2.4], [3.3], [5]], [[2], [2.2], [2.5], [3], [0]]]
 
 	with tf.Session() as sess:
 		ppg = PointProcessGenerater(
@@ -166,10 +182,7 @@ if __name__ == "__main__":
 			batch_size=batch_size, 
 			state_size=state_size,
 			feature_size=feature_size)
-		imit_times, states_history = ppg.generate(sess, num_seq=2, max_t=7, max_learner_len=20)
-		print imit_times
-		# print ppg.debug_dynamic_rnn_unit(sess, num_seq=5)
 
-
+		ppg.train(sess, input_data)
 
 
