@@ -166,23 +166,3 @@ class PointProcessGenerater(object):
 			self.input_data: input_data})
 
 		print test_loss
-
-
-
-if __name__ == "__main__":
-	seq_len      = 5
-	batch_size   = 3
-	state_size   = 4
-	feature_size = 1
-	input_data   = [[[1], [1.5], [2], [0], [0]], [[1.1], [1.2], [2.4], [3.3], [5]], [[2], [2.2], [2.5], [3], [0]]]
-
-	with tf.Session() as sess:
-		ppg = PointProcessGenerater(
-			seq_len=seq_len,
-			batch_size=batch_size, 
-			state_size=state_size,
-			feature_size=feature_size)
-
-		ppg.train(sess, input_data)
-
-
