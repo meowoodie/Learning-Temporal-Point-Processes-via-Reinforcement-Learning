@@ -131,8 +131,8 @@ class PointProcessGenerater(object):
 		rnn_input = tf.reshape(prv_action, [num_seq, 1, self.feature_size])
 
 		_, cur_state = tf.nn.dynamic_rnn(self.rnn_cell, rnn_input,
-										 initial_state=prv_state,
-										 dtype=tf.float32)
+			                             initial_state=prv_state,
+			                             dtype=tf.float32)
 		# Reparameterization trick
 		# Reyleigh distribution with parameter sigma.
 		W = tf.get_variable("W_r", [self.state_size, self.feature_size])
