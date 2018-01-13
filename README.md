@@ -3,7 +3,7 @@ Imitation-Learning-for-Point-Process
 
 Introduction
 ---
-PPG (Point Process Generator) is a highly-customized RNN (Recurrent Neural Network) Model that is able to produce actions by imitating expert sequences.
+PPG (Point Process Generator) is a highly-customized RNN (Recurrent Neural Network) Model that would be able to produce actions by imitating expert sequences.
 
 How to Train a PPG
 ---
