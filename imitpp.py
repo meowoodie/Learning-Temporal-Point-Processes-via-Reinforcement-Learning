@@ -21,7 +21,8 @@ class PointProcessGenerater(object):
 	def __init__(self, seq_len=5, state_size=3, batch_size=2, feature_size=1):
 
 		#TODO: remove seq_len
-		tf.set_random_seed(100)
+		
+		# tf.set_random_seed(100)
 
 		self.seq_len      = seq_len
 		self.batch_size   = batch_size
@@ -38,8 +39,8 @@ class PointProcessGenerater(object):
 
 	def _reward(self, t, expert_actions, learner_actions):
 		"""
-		
 		"""
+
 		# get time (index 0 = first element of a feature vector) of last action of each expert sequence
 		# expert_actions has shape [batch_size, sequence_len]
 		expert_times    = expert_actions[:, :, 0]
@@ -70,6 +71,7 @@ class PointProcessGenerater(object):
 	def _fixed_length_rnn(self, num_seq, rnn_len):
 		"""
 		"""
+
 		# state has shape [num_seq, state_size]
 		initial_state = self.rnn_cell.zero_state(num_seq, dtype=tf.float32)
 		# rnn always produce fixed length sequences
@@ -92,6 +94,7 @@ class PointProcessGenerater(object):
 	def _dynamic_rnn_unit(self, num_seq, prv_action, prv_state):
 		"""
 		"""
+
 		# reshape previous action to make it fit in the input of rnn
 		# [num_seq, feature_size] -> [num_seq, 1, feature_size]
 		# here 1 means the length of input sequence for dynamic_rnn is 1 
@@ -115,13 +118,14 @@ class PointProcessGenerater(object):
 
 	def _median_pairwise_distance(self, seqAs, seqBs):
 		"""
-
 		reference: https://stackoverflow.com/questions/37009647/compute-pairwise-distance-in-a-batch-without-replicating-tensor-in-tensorflow
 		"""
+
 		#TODO: remove the reshape process in the future. 
 		#      for now, the seqs has shape [batch_size, seq_len],
 		#      in the future, the calculation of distance could be applied to 
 		#      high dimensional data, which means the input seqs has shape [batch_size, seq_len, dim]
+
 		seq_len = tf.shape(seqAs)[1] + tf.shape(seqBs)[1]
 		seqs = tf.concat([seqAs, seqBs], axis=1)
 		seqs = tf.reshape(seqs, [self.batch_size, seq_len, 1])
@@ -148,9 +152,11 @@ class PointProcessGenerater(object):
 	def __median(seq):
 		"""
 		"""
+
 		#TODO: mask should be handled carefully when dim is larger than 1. 
-		#      a good mask will recognize the valid cells within A. 
-		#      simply using A > 0 will not be able to be applied to high-dimensional cases.
+		#      a good mask will recognize the valid cells within seq. 
+		#      simply using seq > 0 will not be able to be applied to high-dimensional cases.
+
 		# mask is a matrix which consist of 1 and -1, means valid and invalid cells respectively.
 		mask_col   = (tf.cast(seq > 0, dtype=tf.float32) - 0.5) * 2
 		mask_row   = tf.transpose(mask_col)
