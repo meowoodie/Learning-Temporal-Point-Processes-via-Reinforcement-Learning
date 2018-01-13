@@ -34,9 +34,8 @@ if __name__ == "__main__":
 			state_size=state_size,
 			feature_size=feature_size)
 
-		# ppg.train(sess, input_data, test_data)
-		actions, states_history = ppg.generate(sess, num_seq=3, max_t=7, max_learner_len=10, pretrained=False)
-		print actions
+		ppg.train(sess, input_data, test_data)
+		actions, states_history = ppg.generate(sess, num_seq=3, max_t=7, pretrained=False)
 
 
 

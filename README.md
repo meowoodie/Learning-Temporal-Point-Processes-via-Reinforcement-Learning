@@ -53,7 +53,7 @@ with tf.Session() as sess:
 	# Here is the code for training a new ppg or loading an existed ppg
 
 	# Generate actions
-	actions, states_history = ppg.generate(sess, num_seq=3, max_t=7, max_learner_len=10, pretrained=False)
+	actions, states_history = ppg.generate(sess, num_seq=3, max_t=7, pretrained=False)
 	print actions
 ```
 Below are generated test actions.

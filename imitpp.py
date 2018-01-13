@@ -21,7 +21,7 @@ class PointProcessGenerater(object):
 	def __init__(self, seq_len=5, state_size=3, batch_size=2, feature_size=1):
 
 		#TODO: remove seq_len
-		
+
 		# tf.set_random_seed(100)
 
 		self.seq_len      = seq_len
@@ -34,6 +34,36 @@ class PointProcessGenerater(object):
 
 		# input_data has shape [batch_size, sequence_len, feature_size]
 		self.input_data = tf.placeholder(tf.float32, shape=[batch_size, seq_len, feature_size])
+		self.max_t      = tf.placeholder(tf.float32)
+
+		# Optimizer Computational Graph
+		# notes: putting optimizer graph outside of the init function since it would cause 
+		#        a conflict when you try to run the generate graph. Because the tensorflow
+		#        will try to compile a _fixed_length_rnn subgraph which has been initialized
+		#        in optimizer graph.
+
+		# expert actions and corresponding learner actions
+		# expert_actions has shape [batch_size, seq_len, feature_size]
+		# learner_actions has shape [seq_len, batch_size, feature_size]
+		expert_actions          = self.input_data #TODO: replace input_data with a batch of input_data
+		learner_actions, states = self._fixed_length_rnn(self.batch_size, rnn_len=self.seq_len)
+		# in order to avoid a specific bug (or flaw) triggerred by tensorflow itself
+		# here unfold matrix into a 1D list first, then apply reward function to every single element
+		# in the tensor, finally, refold the result back to a matrix with same shape with original one
+		unfold_times = tf.reshape(learner_actions[:, :, 0], [-1])
+		unfold_rewards = tf.map_fn(lambda t: self._reward(t, expert_actions, learner_actions), unfold_times)
+		refold_rewards = tf.reshape(unfold_rewards, [self.seq_len, self.batch_size])
+		# # loss function
+		self.loss = tf.reduce_mean(tf.reduce_sum(refold_rewards, axis=0))
+		# # optimizer
+		self.optimizer = tf.train.AdamOptimizer(learning_rate=1e-4, beta1=0.5, beta2=0.9).minimize(self.loss)
+
+		# Generator Computational Graph
+
+		self.times  = tf.multiply(tf.cast(learner_actions[:, :, 0] < self.max_t, tf.float32), learner_actions[:, :, 0])
+		self.states = states 
+
+
 
 	# Building Blocks of Computational Graph
 
@@ -177,52 +207,21 @@ class PointProcessGenerater(object):
 	# Available Functions
 	# Runnable Computational Graphs
 
-	def generate(self, sess, num_seq, max_t, max_learner_len=10, pretrained=False):
+	def generate(self, sess, num_seq, max_t, pretrained=False):
 		"""
 		"""
-
-		# Generator Computational Graph
-
-		actions, states = self._fixed_length_rnn(num_seq, rnn_len=max_learner_len)
-		times = tf.multiply(tf.cast(actions[:, :, 0] < max_t, tf.float32), actions[:, :, 0])
-
-		# Runnning Graph
 
 		if not pretrained:
 			init = tf.global_variables_initializer()
 			sess.run(init)
 
-		imit_times, states_history = sess.run([times, states])
+		imit_times, states_history = sess.run([self.times, self.states], feed_dict={self.max_t: max_t})
 
 		return imit_times, states_history
 
 	def train(self, sess, input_data, test_data, iters=10, display_step=1, pretrained=False):
 		"""
 		"""
-
-		# Optimizer Computational Graph
-		# notes: putting optimizer graph outside of the init function since it would cause 
-		#        a conflict when you try to run the generate graph. Because the tensorflow
-		#        will try to compile a _fixed_length_rnn subgraph which has been initialized
-		#        in optimizer graph.
-
-		# expert actions and corresponding learner actions
-		# expert_actions has shape [batch_size, seq_len, feature_size]
-		# learner_actions has shape [seq_len, batch_size, feature_size]
-		expert_actions     = self.input_data #TODO: replace input_data with a batch of input_data
-		learner_actions, _ = self._fixed_length_rnn(self.batch_size, rnn_len=self.seq_len)
-		# in order to avoid a specific bug (or flaw) triggerred by tensorflow itself
-		# here unfold matrix into a 1D list first, then apply reward function to every single element
-		# in the tensor, finally, refold the result back to a matrix with same shape with original one
-		unfold_times = tf.reshape(learner_actions[:, :, 0], [-1])
-		unfold_rewards = tf.map_fn(lambda t: self._reward(t, expert_actions, learner_actions), unfold_times)
-		refold_rewards = tf.reshape(unfold_rewards, [self.seq_len, self.batch_size])
-		# # loss function
-		self.loss = tf.reduce_mean(tf.reduce_sum(refold_rewards, axis=0))
-		# # optimizer
-		self.optimizer = tf.train.AdamOptimizer(learning_rate=1e-4, beta1=0.5, beta2=0.9).minimize(self.loss)
-
-		# Runnning Graph
 
 		# Set pretrained variable if it was existed
 		if not pretrained:
