@@ -45,7 +45,7 @@ class PointProcessGenerater(object):
 		# expert actions and corresponding learner actions
 		# expert_actions has shape [batch_size, seq_len, feature_size]
 		# learner_actions has shape [seq_len, batch_size, feature_size]
-		expert_actions          = self.input_data #TODO: replace input_data with a batch of input_data
+		expert_actions          = self.input_data
 		learner_actions, states = self._fixed_length_rnn(self.batch_size, rnn_len=self.seq_len)
 		# in order to avoid a specific bug (or flaw) triggerred by tensorflow itself
 		# here unfold matrix into a 1D list first, then apply reward function to every single element
@@ -62,8 +62,6 @@ class PointProcessGenerater(object):
 
 		self.times  = tf.multiply(tf.cast(learner_actions[:, :, 0] < self.max_t, tf.float32), learner_actions[:, :, 0])
 		self.states = states 
-
-
 
 	# Building Blocks of Computational Graph
 
@@ -246,6 +244,8 @@ class PointProcessGenerater(object):
 				print >> sys.stderr, "[%s] Train Loss: %.5f,\tTest Loss: %.5f" % (arrow.now(), train_loss, test_loss)
 			step += 1
 		print >> sys.stderr, "[%s] Optimization Finished!" % arrow.now()
+
+	# Utils Function
 
 	def _next_batch(self, input_data, start_index):
 		"""
