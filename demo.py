@@ -13,7 +13,7 @@ import tensorflow as tf
 from imitpp import PointProcessGenerater
 
 if __name__ == "__main__":
-	
+
 	#TODO: give more details and more examples on how to use it
 
 	seq_len      = 5
@@ -23,6 +23,8 @@ if __name__ == "__main__":
 	input_data   = np.array([
 		[[1], [1.5], [2], [0], [0]], [[1.1], [1.2], [2.4], [3.3], [5]], [[2], [2.2], [2.5], [3], [0]], [[1.1], [1.2], [2.4], [3.3], [5]], 
 		[[1], [1.5], [2], [0], [0]], [[1.1], [1.2], [2.4], [3.3], [5]], [[2], [2.2], [2.5], [3], [0]], [[1.1], [1.2], [2.4], [3.3], [5]]])
+	test_data    = np.array([
+		[[1], [1.5], [2], [0], [0]], [[1.1], [1.2], [2.4], [3.3], [5]]])
 
 	with tf.Session() as sess:
 
@@ -32,5 +34,7 @@ if __name__ == "__main__":
 			state_size=state_size,
 			feature_size=feature_size)
 
-		print ppg.train(sess, input_data)
+		ppg.train(sess, input_data, test_data)
+
+
 

@@ -190,7 +190,7 @@ class PointProcessGenerater(object):
 
 		return imit_times, states_history
 
-	def train(self, sess, input_data, iters=10, display_step=1, pretrained=False):
+	def train(self, sess, input_data, test_data, iters=10, display_step=1, pretrained=False):
 		"""
 		"""
 
@@ -234,16 +234,11 @@ class PointProcessGenerater(object):
 			sess.run(self.optimizer, feed_dict={self.input_data: batch_input_data})
 			if step % display_step == 0:
 				# Calculate batch loss and accuracy
-				loss = sess.run(self.loss, feed_dict={self.input_data: batch_input_data})
-				# test_loss, test_acc = sess.run(
-				# 	[self.cost, self.accuracy],
-				# 	feed_dict={self.q: test_qs, self.d: test_ds, self.y: test_ys})
+				train_loss = sess.run(self.loss, feed_dict={self.input_data: batch_input_data})
+				test_loss  = sess.run(self.loss, feed_dict={self.input_data: test_data})
 				# Log information for each iteration
 				print >> sys.stderr, "[%s] Iter: %d" % (arrow.now(), (step * self.batch_size)) 
-				# print >> sys.stderr, "[%s] Train:\tloss (%.5f)\tacc (%.5f)" % (arrow.now(), loss, acc)
-				# print >> sys.stderr, "[%s] Test:\tloss (%.5f)\tacc (%.5f)" % (arrow.now(), test_loss, test_acc)
-				print loss
-				# print >> sys.stderr, "[%s] Test node value:", nodes[0].shape
+				print >> sys.stderr, "[%s] Train Loss: %.5f,\tTest Loss: %.5f" % (arrow.now(), train_loss, test_loss)
 			step += 1
 		print >> sys.stderr, "[%s] Optimization Finished!" % arrow.now()
 
