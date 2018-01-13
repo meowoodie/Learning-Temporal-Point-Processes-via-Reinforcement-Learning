@@ -23,7 +23,7 @@ with tf.Session() as sess:
 	ppg.train(sess, input_data, test_data, iters=10, display_step=1, pretrained=False)
 ```
 
-The details of the training process will be logged into standard error stream. Below is a test log information.
+The details of the training process will be logged into standard error stream. Below is testing log information.
 ```shell
 2018-01-12 21:58:19.597947: W tensorflow/core/platform/cpu_feature_guard.cc:45] The TensorFlow library wasn't compiled to use SSE4.2 instructions, but these are available on your machine and could speed up CPU computations.
 2018-01-12 21:58:19.597973: W tensorflow/core/platform/cpu_feature_guard.cc:45] The TensorFlow library wasn't compiled to use AVX instructions, but these are available on your machine and could speed up CPU computations.
@@ -56,7 +56,7 @@ with tf.Session() as sess:
 	actions, states_history = ppg.generate(sess, num_seq=3, max_t=7, max_learner_len=10, pretrained=False)
 	print actions
 ```
-Below is a test generated actions.
+Below are generated test actions.
 ```shell
 (array([[ 0.63660634,  1.12912512,  0.39286253],
         [ 1.64375508,  1.60563707,  1.77609217],
