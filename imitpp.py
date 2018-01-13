@@ -190,7 +190,7 @@ class PointProcessGenerater(object):
 
 		return imit_times, states_history
 
-	def train(self, sess, input_data, pretrained=False):
+	def train(self, sess, input_data, iters=10, display_step=1, pretrained=False):
 		"""
 		"""
 
@@ -223,34 +223,29 @@ class PointProcessGenerater(object):
 			init = tf.global_variables_initializer()
 			sess.run(init)
 
-		# step        = 1 # the step of the iteration
-		# start_index = 0 # the index of the start row of the batch
-		# # Keep training until reach max iterations
-		# while step * self.batch_size <= self.iters:
-		# 	# Fetch the next batch of the input data (q, d, y)
-		# 	# And update the start_indext in order to prepare for the next batch
-		# 	batch_qs, batch_ds, batch_ys, start_index = self._next_batch(qs, ds, ys, start_index)
-		# 	# Run optimization
-		# 	sess.run(self.optimizer, feed_dict={self.q: batch_qs, self.d: batch_ds, self.y: batch_ys})
-		# 	if step % self.display_step == 0:
-		# 		# Calculate batch loss and accuracy
-		# 		loss, acc = sess.run(
-		# 			[self.cost, self.accuracy], 
-		# 			feed_dict={self.q: batch_qs, self.d: batch_ds, self.y: batch_ys})
-		# 		test_loss, test_acc = sess.run(
-		# 			[self.cost, self.accuracy],
-		# 			feed_dict={self.q: test_qs, self.d: test_ds, self.y: test_ys})
-		# 		# Log information for each iteration
-		# 		print >> sys.stderr, "[%s] Iter: %d" % (arrow.now(), (step * self.batch_size)) 
-		# 		print >> sys.stderr, "[%s] Train:\tloss (%.5f)\tacc (%.5f)" % (arrow.now(), loss, acc)
-		# 		print >> sys.stderr, "[%s] Test:\tloss (%.5f)\tacc (%.5f)" % (arrow.now(), test_loss, test_acc)
-		# 		# print >> sys.stderr, "[%s] Test node value:", nodes[0].shape
-		# 	step += 1
-		# print >> sys.stderr, "[%s] Optimization Finished!" % arrow.now()
-
-		#TODO: Do training process in batch
-		return sess.run(self.optimizer, 
-			feed_dict={self.input_data: input_data})
+		step        = 1 # the step of the iteration
+		start_index = 0 # the index of the start row of the batch
+		# Keep training until reach max iterations
+		while step * self.batch_size <= iters:
+			# Fetch the next batch of the input data (q, d, y)
+			# And update the start_indext in order to prepare for the next batch
+			batch_input_data, start_index = self._next_batch(input_data, start_index)
+			# Run optimization
+			sess.run(self.optimizer, feed_dict={self.input_data: batch_input_data})
+			if step % display_step == 0:
+				# Calculate batch loss and accuracy
+				loss = sess.run(self.loss, feed_dict={self.input_data: batch_input_data})
+				# test_loss, test_acc = sess.run(
+				# 	[self.cost, self.accuracy],
+				# 	feed_dict={self.q: test_qs, self.d: test_ds, self.y: test_ys})
+				# Log information for each iteration
+				print >> sys.stderr, "[%s] Iter: %d" % (arrow.now(), (step * self.batch_size)) 
+				# print >> sys.stderr, "[%s] Train:\tloss (%.5f)\tacc (%.5f)" % (arrow.now(), loss, acc)
+				# print >> sys.stderr, "[%s] Test:\tloss (%.5f)\tacc (%.5f)" % (arrow.now(), test_loss, test_acc)
+				print loss
+				# print >> sys.stderr, "[%s] Test node value:", nodes[0].shape
+			step += 1
+		print >> sys.stderr, "[%s] Optimization Finished!" % arrow.now()
 
 	def _next_batch(self, input_data, start_index):
 		"""
@@ -263,17 +258,17 @@ class PointProcessGenerater(object):
 		"""
 
 		# total number of rows of the input data (query and target)
-		num_row, num_col = np.shape(input_data)   
+		num_seq, num_action, num_feature = np.shape(input_data)   
 		# start index of the row of the input data
-		start_row = start_index % num_row 
+		start_seq = start_index % num_seq 
 		# end index of the row of the input data
-		end_row   = (start_row + self.batch_size) % num_row 
+		end_seq   = (start_seq + self.batch_size) % num_seq 
 		# if there is not enought data left in the dataset for generating an integral batch,
 		# then top up this batch by traversing back to the start of the dataset. 
-		if end_row < start_row:
-			batch_input_data = np.append(input_data[start_row: num_row], input_data[0: end_row], axis=0).astype(np.float32)
+		if end_seq < start_seq:
+			batch_input_data = np.append(input_data[start_seq: num_seq], input_data[0: end_seq], axis=0).astype(np.float32)
 		else:
-			batch_input_data = input_data[start_row: end_row].astype(np.float32)
+			batch_input_data = input_data[start_seq: end_seq].astype(np.float32)
 		# Update the start index
 		start_index += self.batch_size
 		return batch_input_data, start_index
