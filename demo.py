@@ -10,7 +10,7 @@ import arrow
 import random
 import numpy as np
 import tensorflow as tf
-from imitpp import PointProcessGenerater
+from imitpp import PointProcessGenerator
 
 if __name__ == "__main__":
 
@@ -28,7 +28,7 @@ if __name__ == "__main__":
 
 	with tf.Session() as sess:
 
-		ppg = PointProcessGenerater(
+		ppg = PointProcessGenerator(
 			seq_len=seq_len,
 			batch_size=batch_size, 
 			state_size=state_size,

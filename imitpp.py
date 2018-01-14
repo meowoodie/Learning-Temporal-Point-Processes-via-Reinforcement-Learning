@@ -13,7 +13,7 @@ import random
 import numpy as np
 import tensorflow as tf
 
-class PointProcessGenerater(object):
+class PointProcessGenerator(object):
 	"""
 
 	"""
@@ -37,10 +37,6 @@ class PointProcessGenerater(object):
 		self.max_t      = tf.placeholder(tf.float32)
 
 		# Optimizer Computational Graph
-		# notes: putting optimizer graph outside of the init function since it would cause 
-		#        a conflict when you try to run the generate graph. Because the tensorflow
-		#        will try to compile a _fixed_length_rnn subgraph which has been initialized
-		#        in optimizer graph.
 
 		# expert actions and corresponding learner actions
 		# expert_actions has shape [batch_size, seq_len, feature_size]
@@ -53,9 +49,9 @@ class PointProcessGenerater(object):
 		unfold_times = tf.reshape(learner_actions[:, :, 0], [-1])
 		unfold_rewards = tf.map_fn(lambda t: self._reward(t, expert_actions, learner_actions), unfold_times)
 		refold_rewards = tf.reshape(unfold_rewards, [self.seq_len, self.batch_size])
-		# # loss function
+		# loss function
 		self.loss = tf.reduce_mean(tf.reduce_sum(refold_rewards, axis=0))
-		# # optimizer
+		# optimizer
 		self.optimizer = tf.train.AdamOptimizer(learning_rate=1e-4, beta1=0.5, beta2=0.9).minimize(self.loss)
 
 		# Generator Computational Graph
