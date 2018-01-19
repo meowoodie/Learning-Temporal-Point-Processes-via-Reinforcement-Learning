@@ -19,19 +19,23 @@ class PointProcessGenerator(object):
 
 	"""
 
-	def __init__(self, seq_len=5, state_size=3, batch_size=2, feature_size=1):
+	def __init__(self, max_t, seq_len,
+	             state_size=3, batch_size=2, feature_size=1,
+				 iters=10, display_step=1, lr=1e-4):
 		tf.set_random_seed(100)
 		self.seq_len      = seq_len
 		self.batch_size   = batch_size
 		self.feature_size = feature_size
 		self.state_size   = state_size
+		self.iters        = iters
+		self.display_step = display_step
 
 		# create a BasicRNNCell
 		self.rnn_cell = tf.contrib.rnn.BasicRNNCell(state_size)
 
 		# input_data has shape [batch_size, sequence_len, feature_size]
 		self.input_data = tf.placeholder(tf.float32, shape=[batch_size, seq_len, feature_size])
-		self.max_t      = tf.constant(10, dtype=tf.float32)
+		self.max_t      = tf.constant(max_t, dtype=tf.float32)
 
 		# Optimizer Computational Graph
 
@@ -52,7 +56,7 @@ class PointProcessGenerator(object):
 		# loss function
 		self.loss = tf.reduce_mean(tf.reduce_sum(refold_rewards, axis=1))
 		# optimizer
-		self.optimizer = tf.train.AdamOptimizer(learning_rate=1e-4, beta1=0.5, beta2=0.9).minimize(self.loss)
+		self.optimizer = tf.train.AdamOptimizer(learning_rate=lr, beta1=0.5, beta2=0.9).minimize(self.loss)
 
 		# Generator Computational Graph
 
@@ -183,18 +187,18 @@ class PointProcessGenerator(object):
 	# Available Functions
 	# Runnable Computational Graphs
 
-	def generate(self, sess, num_seq, max_t, pretrained=False):
+	def generate(self, sess, pretrained=False):
 		"""
 		"""
 		if not pretrained:
 			init = tf.global_variables_initializer()
 			sess.run(init)
 
-		imit_times, states_history = sess.run([self.times, self.states], feed_dict={self.max_t: max_t})
+		imit_times, states_history = sess.run([self.times, self.states])
 
 		return imit_times, states_history
 
-	def train(self, sess, input_data, test_data, iters=10, display_step=1, pretrained=False):
+	def train(self, sess, input_data, test_data=None, pretrained=False):
 		"""
 		"""
 		# Set pretrained variable if it was existed
@@ -205,19 +209,20 @@ class PointProcessGenerator(object):
 		step        = 1 # the step of the iteration
 		start_index = 0 # the index of the start row of the batch
 		# Keep training until reach max iterations
-		while step * self.batch_size <= iters:
+		while step * self.batch_size <= self.iters:
 			# Fetch the next batch of the input data (q, d, y)
 			# And update the start_indext in order to prepare for the next batch
 			batch_input_data, start_index = self._next_batch(input_data, start_index)
 			# Run optimization
 			sess.run(self.optimizer, feed_dict={self.input_data: batch_input_data})
-			if step % display_step == 0:
+			if step % self.display_step == 0:
 				# Calculate batch loss and accuracy
 				train_loss = sess.run(self.loss, feed_dict={self.input_data: batch_input_data})
-				test_loss  = sess.run(self.loss, feed_dict={self.input_data: test_data})
-				# Log information for each iteration
 				print >> sys.stderr, "[%s] Iter: %d" % (arrow.now(), (step * self.batch_size))
-				print >> sys.stderr, "[%s] Train Loss: %.5f,\tTest Loss: %.5f" % (arrow.now(), train_loss, test_loss)
+				print >> sys.stderr, "[%s] Train Loss: %.5f" % (arrow.now(), train_loss)
+				if test_data is not None:
+					test_loss  = sess.run(self.loss, feed_dict={self.input_data: test_data})
+					print >> sys.stderr, "[%s] Test Loss: %.5f" % (arrow.now(), test_loss)
 			step += 1
 		print >> sys.stderr, "[%s] Optimization Finished!" % arrow.now()
 

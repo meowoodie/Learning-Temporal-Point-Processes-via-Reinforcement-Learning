@@ -7,21 +7,29 @@ PPG (Point Process Generator) is a highly-customized RNN (Recurrent Neural Netwo
 
 How to Train a PPG
 ---
-Before training a PPG, you have to organize and format the training data and test data into numpy arrays, which have shape (`num_seqs`, `max_num_actions`, `num_features`) and (`batch_size`, `max_num_actions`, `num_features`) respectively. Also you have to do paddings (zero values) for those sequences of actions whose length are less than `max_num_actions`. For the time being, 
-`num_features` has to be set as 1 (time). 
+Before training a PPG, you have to organize and format the training data and test data into numpy arrays, which have shape (`num_seqs`, `max_num_actions`, `num_features`) and (`batch_size`, `max_num_actions`, `num_features`) respectively. Also you have to do paddings (zero values) for those sequences of actions whose length are less than `max_num_actions`. For the time being,
+`num_features` has to be set as 1 (time).
 
 Then you can initiate a session by tensorflow, and do the training process like following example:
 ```python
+max_t        = 7
+seq_len      = 10
+batch_size   = 3
+state_size   = 5
+feature_size = 1
 with tf.Session() as sess:
 	# Substantiate a ppg object
-	ppg = PointProcessGenerater(
-		seq_len=seq_len,
-		batch_size=batch_size, 
+	ppg = PointProcessGenerator(
+		max_t=max_t, # max time for all learner & expert actions
+		seq_len=seq_len, # length for all learner & expert actions sequences
+		batch_size=batch_size,
 		state_size=state_size,
-		feature_size=feature_size)
+		feature_size=feature_size,
+		iters=10, display_step=1, lr=1e-4)
 	# Start training
-	ppg.train(sess, input_data, test_data, iters=10, display_step=1, pretrained=False)
+	ppg.train(sess, input_data, test_data, pretrained=False)
 ```
+You can also omit parameter `test_data`, which is set `None` by default, if you don't have test data for training.
 
 The details of the training process will be logged into standard error stream. Below is testing log information.
 ```shell
@@ -42,18 +50,16 @@ The details of the training process will be logged into standard error stream. B
 [2018-01-12T21:58:23.373500-05:00] Optimization Finished!
 ```
 
-
-
 How to Generate Actions
 ---
-By simply running following code, fixed size (number and length) of sequences with indicated time frame will be generated automatically without input data.
+By simply running following code, fixed size (number and length) of sequences with indicated time frame will be generated automatically without input data. What needs to be noted is the length and the number of the generated sequence have been specified by the same input parameters when you initialize the `ppg` object.
 ```python
 with tf.Session() as sess:
 
 	# Here is the code for training a new ppg or loading an existed ppg
 
 	# Generate actions
-	actions, states_history = ppg.generate(sess, num_seq=3, max_t=7, pretrained=False)
+	actions, states_history = ppg.generate(sess, pretrained=False)
 	print actions
 ```
 Below are generated test actions.
@@ -72,5 +78,3 @@ Below are generated test actions.
 
 
 > A runnable demo has been attached to this repo in `demo.py`.
-
-
