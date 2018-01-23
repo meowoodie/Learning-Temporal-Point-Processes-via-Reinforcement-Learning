@@ -19,10 +19,12 @@ class PointProcessGenerator(object):
 
 	"""
 
-	def __init__(self, max_t, seq_len,
+	def __init__(self, t_max, seq_len,
 	             state_size=3, batch_size=2, feature_size=1,
 				 iters=10, display_step=1, lr=1e-4):
+
 		tf.set_random_seed(100)
+
 		self.seq_len      = seq_len
 		self.batch_size   = batch_size
 		self.feature_size = feature_size
@@ -35,7 +37,7 @@ class PointProcessGenerator(object):
 
 		# input_data has shape [batch_size, sequence_len, feature_size]
 		self.input_data = tf.placeholder(tf.float32, shape=[batch_size, seq_len, feature_size])
-		self.max_t      = tf.constant(max_t, dtype=tf.float32)
+		self.t_max      = tf.constant(t_max, dtype=tf.float32)
 
 		# Optimizer Computational Graph
 
@@ -47,48 +49,74 @@ class PointProcessGenerator(object):
 		# learner_actions has shape [batch_size, seq_len, feature_size]
 		# which now has the same shape as expert_actions
 		learner_actions         = tf.transpose(learner_actions, perm=(1, 0, 2))
-		# in order to avoid a specific bug (or flaw) triggerred by tensorflow itself
-		# here unfold matrix into a 1D list first, then apply reward function to every single element
-		# in the tensor, finally, refold the result back to a matrix with same shape with original one
-		unfold_times = tf.reshape(learner_actions[:, :, 0], [-1])
-		unfold_rewards = tf.map_fn(lambda t: self._reward(t, expert_actions, learner_actions), unfold_times)
-		refold_rewards = tf.reshape(unfold_rewards, [self.batch_size, self.seq_len])
+
+		# # in order to avoid a specific bug (or flaw) triggerred by tensorflow itself
+		# # here unfold matrix into a 1D list first, then apply reward function to every single element
+		# # in the tensor, finally, refold the result back to a matrix with same shape with original one
+		# unfold_times = tf.reshape(learner_actions[:, :, 0], [-1])
+		# unfold_rewards = tf.map_fn(lambda t: self._reward(t, expert_actions, learner_actions), unfold_times)
+		# refold_rewards = tf.reshape(unfold_rewards, [self.batch_size, self.seq_len])
+
 		# loss function
-		self.loss = tf.reduce_mean(tf.reduce_sum(refold_rewards, axis=1))
+		self.loss = self._reward_loss(expert_actions, learner_actions)
 		# optimizer
-		self.optimizer = tf.train.AdamOptimizer(learning_rate=lr, beta1=0.5, beta2=0.9).minimize(self.loss)
-
+		self.optimizer = tf.train.AdamOptimizer(learning_rate=lr, beta1=0.5, beta2=0.9)\
+		                   .minimize(self.loss)
 		# Generator Computational Graph
-
-		self.times  = tf.multiply(tf.cast(learner_actions[:, :, 0] < self.max_t, tf.float32), learner_actions[:, :, 0])
+		self.times  = tf.multiply(tf.cast(learner_actions[:, :, 0] < self.t_max, tf.float32), learner_actions[:, :, 0])
 		self.states = states
 
 	# Building Blocks of Computational Graph
 
-	def _reward(self, t, expert_actions, learner_actions):
+	def _reward_loss(self, expert_actions, learner_actions):
 		"""
 		"""
-		# get time (index 0 = first element of a feature vector) of last action of each expert sequence
-		# expert_actions has shape [batch_size, sequence_len]
-		expert_times    = expert_actions[:, :, 0]
-		max_times       = tf.reduce_max(expert_times, reduction_indices=[1])
-		# indices for action in batch of actions and
-		# indices for time in max times list
-		action_indices  = tf.constant(np.array(range(self.batch_size)), tf.int32)
-		# get learner times from learner actions
-		learner_times = tf.multiply(
-			tf.cast(learner_actions[:, :, 0] < self.max_t, tf.float32),
-			learner_actions[:, :, 0])
+		# TODO: here we only consider the time in the action feature. In the future
+		#       other feature will be taken into account.
+		unfolded_learner_times = tf.reshape(learner_actions, [self.batch_size*self.seq_len, 1])
+		unfolded_expert_times  = tf.reshape(expert_actions, [self.batch_size*self.seq_len, 1])
+		# Prepare masks for learner_time and expert_time (filter invalid "< max_t" values)
+		learner_times_mask     = tf.cast(unfolded_learner_times < self.t_max, dtype=tf.float32)
+		expert_times_mask      = tf.cast(unfolded_expert_times > 0.0, dtype=tf.float32)
+		unfolded_learner_times = tf.multiply(unfolded_learner_times, learner_times_mask)
+		# Concatenate expert_time and learner_time and prepare their mask for fast matrix operation
+		basis_times      = tf.concat([unfolded_expert_times, unfolded_learner_times], axis=0)
+		basis_times_mask = tf.transpose(tf.concat([expert_times_mask, -1 * learner_times_mask], axis=0))
+		# Calculate the kernel bandwidth, which is the median value of expert_time and learner_time
+		kernel_bandwidth = self._median_pairwise_distance(unfolded_expert_times, unfolded_learner_times)
 
-		# calculate kernel bandwidth
-		median = self._median_pairwise_distance(expert_times, learner_times)
-		# median = tf.transpose(tf.reshape(tf.tile(medians, [self.seq_len]), (self.seq_len, self.batch_size)))
-		# return reward
-		reward = tf.reduce_mean(tf.subtract(
-			tf.reduce_sum(self._gaussian_kernel(expert_times, t, median), axis=1), \
-			tf.reduce_sum(self._gaussian_kernel(learner_times, t, median), axis=1)))
+		norm2_kernel = tf.exp(-tf.square(basis_times - tf.transpose(basis_times)) / kernel_bandwidth)
+		# norm2_kernel = tf.subtract(norm2_kernel, tf.diag(tf.diag_part(norm2_kernel)))
+		norm2 = tf.matmul(basis_times_mask,
+		                  tf.matmul(norm2_kernel, tf.transpose(basis_times_mask))) / \
+		        (self.batch_size * self.batch_size)
+		mmd   = tf.sqrt(norm2)
+		return mmd
 
-		return reward
+	# def _reward(self, t, expert_actions, learner_actions):
+	# 	"""
+	# 	"""
+	# 	# get time (index 0 = first element of a feature vector) of last action of each expert sequence
+	# 	# expert_actions has shape [batch_size, sequence_len]
+	# 	expert_times    = expert_actions[:, :, 0]
+	# 	max_times       = tf.reduce_max(expert_times, reduction_indices=[1])
+	# 	# indices for action in batch of actions and
+	# 	# indices for time in max times list
+	# 	action_indices  = tf.constant(np.array(range(self.batch_size)), tf.int32)
+	# 	# get learner times from learner actions
+	# 	learner_times = tf.multiply(
+	# 		tf.cast(learner_actions[:, :, 0] < self.max_t, tf.float32),
+	# 		learner_actions[:, :, 0])
+    #
+	# 	# calculate kernel bandwidth
+	# 	median = self._median_pairwise_distance(expert_times, learner_times)
+	# 	# median = tf.transpose(tf.reshape(tf.tile(medians, [self.seq_len]), (self.seq_len, self.batch_size)))
+	# 	# return reward
+	# 	reward = tf.reduce_mean(tf.subtract(
+	# 		tf.reduce_sum(self._gaussian_kernel(expert_times, t, median), axis=1), \
+	# 		tf.reduce_sum(self._gaussian_kernel(learner_times, t, median), axis=1)))
+    #
+	# 	return reward
 
 	def _fixed_length_rnn(self, num_seq, rnn_len):
 		"""
@@ -138,6 +166,7 @@ class PointProcessGenerator(object):
 
 	def _median_pairwise_distance(self, seqAs, seqBs):
 		"""
+		Get median value of pairwise distances for two tensors.
 		"""
 		#TODO: remove the reshape process in the future.
 		#      for now, the seqs has shape [batch_size, seq_len],
@@ -147,22 +176,22 @@ class PointProcessGenerator(object):
 		seqBs = tf.reshape(seqBs, [-1])
 		seq   = tf.concat([seqAs, seqBs], axis=0)
 		seq   = tf.reshape(seq, [tf.size(seq), 1])
-
 		return self.__median(seq)
 
-	def _gaussian_kernel(self, real_ts, var_ts, const):
-		"""
-		"""
-		# get mask of non zero value from real_t
-		mask = tf.cast(real_ts > 0, dtype=tf.float32)
-		# put mask on var_t in order to cancel the padding value in the real_t
-		var_ts = tf.multiply(var_ts, mask)
-
-		return tf.exp(- 1 * tf.divide(tf.square(real_ts - var_ts), (2 * const)))
+	# def _gaussian_kernel(self, real_ts, var_ts, const):
+	# 	"""
+	# 	"""
+	# 	# get mask of non zero value from real_t
+	# 	mask = tf.cast(real_ts > 0, dtype=tf.float32)
+	# 	# put mask on var_t in order to cancel the padding value in the real_t
+	# 	var_ts = tf.multiply(var_ts, mask)
+	# 	return tf.exp(- 1 * tf.divide(tf.square(real_ts - var_ts), (2 * const)))
 
 	@staticmethod
 	def __median(seq):
 		"""
+		Calculate median value of pairwise distance between two arbitrary points
+		in a sequence of points.
 		"""
 		#TODO: mask should be handled carefully when dim is larger than 1.
 		#      a good mask will recognize the valid cells within seq.
@@ -179,9 +208,8 @@ class PointProcessGenerator(object):
 		pdist = tf.reshape(   # flatten distanes into a 1D array
 				tf.multiply(  # apply mask: remove invalid distances
 					mask, (r - 2 * tf.matmul(seq, tf.transpose(seq)) + tf.transpose(r))), [-1])
-		median = tf.nn.top_k(pdist, median_ind).values[median_ind-1] + \
+		median = tf.nn.top_k(pdist, median_ind).values[median_ind - 1] + \
 			     tf.constant(1e-06, dtype=tf.float32) # in avoid of medians is 0
-
 		return median
 
 	# Available Functions
@@ -195,7 +223,6 @@ class PointProcessGenerator(object):
 			sess.run(init)
 
 		imit_times, states_history = sess.run([self.times, self.states])
-
 		return imit_times, states_history
 
 	def train(self, sess, input_data, test_data=None, pretrained=False):
@@ -252,3 +279,9 @@ class PointProcessGenerator(object):
 		# Update the start index
 		start_index += self.batch_size
 		return batch_input_data, start_index
+
+	# def unittest(self, sess, input_data):
+	# 	init = tf.global_variables_initializer()
+	# 	sess.run(init)
+	# 	loss = sess.run(self.loss, feed_dict={self.input_data: input_data})
+	# 	print loss
