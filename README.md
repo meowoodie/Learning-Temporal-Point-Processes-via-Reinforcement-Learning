@@ -33,21 +33,41 @@ You can also omit parameter `test_data`, which is set `None` by default, if you 
 
 The details of the training process will be logged into standard error stream. Below is testing log information.
 ```shell
-2018-01-12 21:58:19.597947: W tensorflow/core/platform/cpu_feature_guard.cc:45] The TensorFlow library wasn't compiled to use SSE4.2 instructions, but these are available on your machine and could speed up CPU computations.
-2018-01-12 21:58:19.597973: W tensorflow/core/platform/cpu_feature_guard.cc:45] The TensorFlow library wasn't compiled to use AVX instructions, but these are available on your machine and could speed up CPU computations.
-2018-01-12 21:58:19.597979: W tensorflow/core/platform/cpu_feature_guard.cc:45] The TensorFlow library wasn't compiled to use AVX2 instructions, but these are available on your machine and could speed up CPU computations.
-2018-01-12 21:58:19.597984: W tensorflow/core/platform/cpu_feature_guard.cc:45] The TensorFlow library wasn't compiled to use FMA instructions, but these are available on your machine and could speed up CPU computations.
-[2018-01-12T21:58:23.173787-05:00] Iter: 2
-[2018-01-12T21:58:23.173927-05:00] Train Loss: -6.65403,	Test Loss: -1.71365
-[2018-01-12T21:58:23.214679-05:00] Iter: 4
-[2018-01-12T21:58:23.214815-05:00] Train Loss: -5.15812,	Test Loss: -6.43803
-[2018-01-12T21:58:23.267725-05:00] Iter: 6
-[2018-01-12T21:58:23.267862-05:00] Train Loss: -4.56620,	Test Loss: -8.62218
-[2018-01-12T21:58:23.316168-05:00] Iter: 8
-[2018-01-12T21:58:23.316304-05:00] Train Loss: -3.63575,	Test Loss: -6.72692
-[2018-01-12T21:58:23.373238-05:00] Iter: 10
-[2018-01-12T21:58:23.373373-05:00] Train Loss: -9.03363,	Test Loss: -4.45932
-[2018-01-12T21:58:23.373500-05:00] Optimization Finished!
+2018-01-23 15:50:25.578574: W tensorflow/core/platform/cpu_feature_guard.cc:45] The TensorFlow library wasn't compiled to use SSE4.2 instructions, but these are available on your machine and could speed up CPU computations.
+2018-01-23 15:50:25.578595: W tensorflow/core/platform/cpu_feature_guard.cc:45] The TensorFlow library wasn't compiled to use AVX instructions, but these are available on your machine and could speed up CPU computations.
+2018-01-23 15:50:25.578601: W tensorflow/core/platform/cpu_feature_guard.cc:45] The TensorFlow library wasn't compiled to use AVX2 instructions, but these are available on your machine and could speed up CPU computations.
+2018-01-23 15:50:25.578605: W tensorflow/core/platform/cpu_feature_guard.cc:45] The TensorFlow library wasn't compiled to use FMA instructions, but these are available on your machine and could speed up CPU computations.
+[2018-01-23T15:50:46.381850-05:00] Iter: 64
+[2018-01-23T15:50:46.382798-05:00] Train Loss: 12.07759
+[2018-01-23T15:51:01.708265-05:00] Iter: 128
+[2018-01-23T15:51:01.708412-05:00] Train Loss: 10.53193
+[2018-01-23T15:51:16.116164-05:00] Iter: 192
+[2018-01-23T15:51:16.116308-05:00] Train Loss: 6.10489
+[2018-01-23T15:51:26.816642-05:00] Iter: 256
+[2018-01-23T15:51:26.816785-05:00] Train Loss: 3.17384
+[2018-01-23T15:51:36.808152-05:00] Iter: 320
+[2018-01-23T15:51:36.808301-05:00] Train Loss: 2.29386
+[2018-01-23T15:51:46.169030-05:00] Iter: 384
+[2018-01-23T15:51:46.169334-05:00] Train Loss: 1.71573
+[2018-01-23T15:51:55.244403-05:00] Iter: 448
+[2018-01-23T15:51:55.244538-05:00] Train Loss: 1.82563
+[2018-01-23T15:52:04.491172-05:00] Iter: 512
+[2018-01-23T15:52:04.491308-05:00] Train Loss: 2.59895
+[2018-01-23T15:52:13.234096-05:00] Iter: 576
+[2018-01-23T15:52:13.234250-05:00] Train Loss: 1.99338
+[2018-01-23T15:52:21.904642-05:00] Iter: 640
+[2018-01-23T15:52:21.904949-05:00] Train Loss: 1.20168
+[2018-01-23T15:52:30.511283-05:00] Iter: 704
+[2018-01-23T15:52:30.511429-05:00] Train Loss: 0.94646
+[2018-01-23T15:52:39.296644-05:00] Iter: 768
+[2018-01-23T15:52:39.296788-05:00] Train Loss: 0.88800
+[2018-01-23T15:52:47.973522-05:00] Iter: 832
+[2018-01-23T15:52:47.973675-05:00] Train Loss: 0.70098
+[2018-01-23T15:52:56.207430-05:00] Iter: 896
+[2018-01-23T15:52:56.207577-05:00] Train Loss: 0.68432
+[2018-01-23T15:53:04.548818-05:00] Iter: 960
+[2018-01-23T15:53:04.548964-05:00] Train Loss: 0.66598
+[2018-01-23T15:53:04.549057-05:00] Optimization Finished!
 ```
 
 How to Generate Actions
