@@ -40,7 +40,6 @@ class PointProcessGenerator(object):
 		self.t_max      = tf.constant(t_max, dtype=tf.float32)
 
 		# Optimizer Computational Graph
-
 		# expert actions and corresponding learner actions
 		# expert_actions has shape [batch_size, seq_len, feature_size]
 		# the orginal learner_actions has shape [seq_len, batch_size, feature_size]
@@ -50,18 +49,12 @@ class PointProcessGenerator(object):
 		# which now has the same shape as expert_actions
 		learner_actions         = tf.transpose(learner_actions, perm=(1, 0, 2))
 
-		# # in order to avoid a specific bug (or flaw) triggerred by tensorflow itself
-		# # here unfold matrix into a 1D list first, then apply reward function to every single element
-		# # in the tensor, finally, refold the result back to a matrix with same shape with original one
-		# unfold_times = tf.reshape(learner_actions[:, :, 0], [-1])
-		# unfold_rewards = tf.map_fn(lambda t: self._reward(t, expert_actions, learner_actions), unfold_times)
-		# refold_rewards = tf.reshape(unfold_rewards, [self.batch_size, self.seq_len])
-
 		# loss function
 		self.loss = self._reward_loss(expert_actions, learner_actions)
 		# optimizer
 		self.optimizer = tf.train.AdamOptimizer(learning_rate=lr, beta1=0.5, beta2=0.9)\
 		                   .minimize(self.loss)
+
 		# Generator Computational Graph
 		self.times  = tf.multiply(tf.cast(learner_actions[:, :, 0] < self.t_max, tf.float32), learner_actions[:, :, 0])
 		self.states = states
@@ -92,31 +85,6 @@ class PointProcessGenerator(object):
 		        (self.batch_size * self.batch_size)
 		mmd   = tf.sqrt(norm2)
 		return mmd
-
-	# def _reward(self, t, expert_actions, learner_actions):
-	# 	"""
-	# 	"""
-	# 	# get time (index 0 = first element of a feature vector) of last action of each expert sequence
-	# 	# expert_actions has shape [batch_size, sequence_len]
-	# 	expert_times    = expert_actions[:, :, 0]
-	# 	max_times       = tf.reduce_max(expert_times, reduction_indices=[1])
-	# 	# indices for action in batch of actions and
-	# 	# indices for time in max times list
-	# 	action_indices  = tf.constant(np.array(range(self.batch_size)), tf.int32)
-	# 	# get learner times from learner actions
-	# 	learner_times = tf.multiply(
-	# 		tf.cast(learner_actions[:, :, 0] < self.max_t, tf.float32),
-	# 		learner_actions[:, :, 0])
-    #
-	# 	# calculate kernel bandwidth
-	# 	median = self._median_pairwise_distance(expert_times, learner_times)
-	# 	# median = tf.transpose(tf.reshape(tf.tile(medians, [self.seq_len]), (self.seq_len, self.batch_size)))
-	# 	# return reward
-	# 	reward = tf.reduce_mean(tf.subtract(
-	# 		tf.reduce_sum(self._gaussian_kernel(expert_times, t, median), axis=1), \
-	# 		tf.reduce_sum(self._gaussian_kernel(learner_times, t, median), axis=1)))
-    #
-	# 	return reward
 
 	def _fixed_length_rnn(self, num_seq, rnn_len):
 		"""
@@ -177,15 +145,6 @@ class PointProcessGenerator(object):
 		seq   = tf.concat([seqAs, seqBs], axis=0)
 		seq   = tf.reshape(seq, [tf.size(seq), 1])
 		return self.__median(seq)
-
-	# def _gaussian_kernel(self, real_ts, var_ts, const):
-	# 	"""
-	# 	"""
-	# 	# get mask of non zero value from real_t
-	# 	mask = tf.cast(real_ts > 0, dtype=tf.float32)
-	# 	# put mask on var_t in order to cancel the padding value in the real_t
-	# 	var_ts = tf.multiply(var_ts, mask)
-	# 	return tf.exp(- 1 * tf.divide(tf.square(real_ts - var_ts), (2 * const)))
 
 	@staticmethod
 	def __median(seq):
