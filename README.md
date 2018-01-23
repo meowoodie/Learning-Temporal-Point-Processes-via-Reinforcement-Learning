@@ -3,7 +3,7 @@ Imitation-Learning-for-Point-Process
 
 Introduction
 ---
-PPG (Point Process Generator) is a highly-customized RNN (Recurrent Neural Network) Model that would be able to produce actions by imitating expert sequences. (**Shuang Li's ongoing work**)
+PPG (Point Process Generator) is a highly-customized RNN (Recurrent Neural Network) Model that would be able to produce actions (a point process) by imitating expert sequences. (**Shuang Li's ongoing work**)
 
 How to Train a PPG
 ---
@@ -20,7 +20,7 @@ feature_size = 1
 with tf.Session() as sess:
 	# Substantiate a ppg object
 	ppg = PointProcessGenerator(
-		max_t=max_t, # max time for all learner & expert actions
+		t_max=t_max,     # max time for all learner & expert actions
 		seq_len=seq_len, # length for all learner & expert actions sequences
 		batch_size=batch_size,
 		state_size=state_size,
