@@ -2,10 +2,8 @@
 # -*- coding: utf-8 -*-
 
 """
-Imitation Learning for Point Process
-
-Reference for calculating median value of a sequence:
-https://stackoverflow.com/questions/37009647/compute-pairwise-distance-in-a-batch-without-replicating-tensor-in-tensorflow
+Kernel script for Imitation Learning for Point Process, mainly including class
+PointProcessGenerator
 """
 
 import sys
@@ -16,7 +14,18 @@ import tensorflow as tf
 
 class PointProcessGenerator(object):
 	"""
+	Point Process Generator is a highly customized RNN model for generating
+	point process actions by imitating input expert actions.
 
+	Param:
+	- t_max:        maximum time of expert actions
+	- seq_len:      length of sequence (with zero padding) of actions
+	- state_size:   size of hidden state of RNN
+	- batch_size:   size of batch data for training
+	- feature_size: size of feature (including time at index 0)
+	- iters:        iterations of training = epoche (step) * batch_size
+	- display_step: log training information at display_step
+	- lr:           learning rate
 	"""
 
 	def __init__(self, t_max, seq_len,
@@ -63,6 +72,7 @@ class PointProcessGenerator(object):
 
 	def _reward_loss(self, expert_actions, learner_actions):
 		"""
+		Reward Loss
 		"""
 		# TODO: here we only consider the time in the action feature. In the future
 		#       other feature will be taken into account.
@@ -88,6 +98,7 @@ class PointProcessGenerator(object):
 
 	def _fixed_length_rnn(self, num_seq, rnn_len):
 		"""
+		Fixed Length RNN implemented by dynamic_rnn of tensorflow
 		"""
 		# state has shape [num_seq, state_size]
 		initial_state = self.rnn_cell.zero_state(num_seq, dtype=tf.float32)
@@ -110,6 +121,7 @@ class PointProcessGenerator(object):
 
 	def _dynamic_rnn_unit(self, num_seq, prv_action, prv_state):
 		"""
+		One step in dynamic_rnn of tensorflow
 		"""
 		# reshape previous action to make it fit in the input of rnn
 		# [num_seq, feature_size] -> [num_seq, 1, feature_size]
@@ -151,6 +163,9 @@ class PointProcessGenerator(object):
 		"""
 		Calculate median value of pairwise distance between two arbitrary points
 		in a sequence of points.
+
+		Reference for calculating median value of a sequence:
+		https://stackoverflow.com/questions/37009647/compute-pairwise-distance-in-a-batch-without-replicating-tensor-in-tensorflow
 		"""
 		#TODO: mask should be handled carefully when dim is larger than 1.
 		#      a good mask will recognize the valid cells within seq.
@@ -176,6 +191,7 @@ class PointProcessGenerator(object):
 
 	def generate(self, sess, pretrained=False):
 		"""
+		Generate actions
 		"""
 		if not pretrained:
 			init = tf.global_variables_initializer()
@@ -186,6 +202,7 @@ class PointProcessGenerator(object):
 
 	def train(self, sess, input_data, test_data=None, pretrained=False):
 		"""
+		Train model
 		"""
 		# Set pretrained variable if it was existed
 		if not pretrained:
@@ -238,9 +255,3 @@ class PointProcessGenerator(object):
 		# Update the start index
 		start_index += self.batch_size
 		return batch_input_data, start_index
-
-	# def unittest(self, sess, input_data):
-	# 	init = tf.global_variables_initializer()
-	# 	sess.run(init)
-	# 	loss = sess.run(self.loss, feed_dict={self.input_data: input_data})
-	# 	print loss
