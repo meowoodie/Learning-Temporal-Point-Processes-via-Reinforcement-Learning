@@ -49,8 +49,11 @@ if __name__ == "__main__":
 			feature_size=feature_size,
 			iters=1000, display_step=1, lr=1e-3)
 
-		# ppg.unittest(sess, expert_actions)
-
+		# Training
 		ppg.train(sess, expert_actions)
-		# actions, states_history = ppg.generate(sess, pretrained=False)
-		# print actions
+		# Saving training results
+		tf_saver = tf.train.Saver()
+		tf_saver.save(sess, "resource/model/seql%d.bts%d.sts%d.fts%d.tmx%d.dts%d" % \
+		                    seq_len, batch_size, state_size, feature_size, t_max, data_size)
+		# Generating
+		actions, states_history = ppg.generate(sess, pretrained=True)
