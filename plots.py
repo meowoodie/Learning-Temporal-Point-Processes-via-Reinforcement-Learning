@@ -19,7 +19,7 @@ def qqplot(time_seqs, x_left=0., x_right=8., y_left=0., y_right=8.,
     ax  = fig.add_subplot(111)
     ax.set_xlim(x_left, x_right)
     ax.set_ylim(y_left, y_right)
-    # plt.ion()
+    # ax.plot([x_left, y_left], [x_right, y_right], color="b", linestyle='-', linewidth=2)
     # Calculate differences (delta values) between each two consecutive points
     # And concatenate the first elements in each sequence with their following delta values
     # Finally set last elements (negative) in each sequence to 0 (because last elements = 0 - last time < 0)

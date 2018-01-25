@@ -15,7 +15,7 @@ import Simulate_Poisson as SP
 from imitpp import PointProcessGenerator
 
 if __name__ == "__main__":
-	# np.random.seed(103)
+	np.random.seed(100)
 
 	# Configuration parameters
 	seq_len      = 30

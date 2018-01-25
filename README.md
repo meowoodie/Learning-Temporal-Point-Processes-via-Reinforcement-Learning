@@ -96,5 +96,4 @@ Below are generated test actions.
         [ 0.        ,  0.        ,  0.        ]], dtype=float32)
 ```
 
-
 > A runnable demo has been attached to this repo in `demo.py`.

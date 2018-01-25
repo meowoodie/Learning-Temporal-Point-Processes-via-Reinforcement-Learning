@@ -91,7 +91,7 @@ class PointProcessGenerator(object):
 		# Calculate the kernel bandwidth, which is the median value of expert_time and learner_time
 		kernel_bandwidth = self._median_pairwise_distance(unfolded_expert_times, unfolded_learner_times)
 
-		norm2_kernel = tf.exp(-tf.square(basis_times - tf.transpose(basis_times)) / kernel_bandwidth)
+		norm2_kernel = tf.exp(-tf.square(basis_times - tf.transpose(basis_times)) / 0.5) # kernel_bandwidth)
 		# norm2_kernel = tf.subtract(norm2_kernel, tf.diag(tf.diag_part(norm2_kernel)))
 		norm2 = tf.matmul(basis_times_mask,
 		                  tf.matmul(norm2_kernel, tf.transpose(basis_times_mask))) / \
