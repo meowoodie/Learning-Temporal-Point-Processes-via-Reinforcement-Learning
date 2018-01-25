@@ -12,6 +12,8 @@ import random
 import numpy as np
 import tensorflow as tf
 
+from plots import qqplot
+
 class PointProcessGenerator(object):
 	"""
 	Point Process Generator is a highly customized RNN model for generating
@@ -32,8 +34,7 @@ class PointProcessGenerator(object):
 	             state_size=3, batch_size=2, feature_size=1,
 				 iters=10, display_step=1, lr=1e-4):
 
-		tf.set_random_seed(100)
-
+		# tf.set_random_seed(100)
 		self.seq_len      = seq_len
 		self.batch_size   = batch_size
 		self.feature_size = feature_size
@@ -63,10 +64,12 @@ class PointProcessGenerator(object):
 		# optimizer
 		self.optimizer = tf.train.AdamOptimizer(learning_rate=lr, beta1=0.5, beta2=0.9)\
 		                   .minimize(self.loss)
+		# self.optimizer = tf.train.GradientDescentOptimizer(learning_rate=lr)\
+		#                    .minimize(self.loss)
 
 		# Generator Computational Graph
-		self.times  = tf.multiply(tf.cast(learner_actions[:, :, 0] < self.t_max, tf.float32), learner_actions[:, :, 0])
-		self.states = states
+		self.learner_times = tf.multiply(tf.cast(learner_actions[:, :, 0] < self.t_max, tf.float32), learner_actions[:, :, 0])
+		self.states        = states
 
 	# Building Blocks of Computational Graph
 
@@ -138,7 +141,7 @@ class PointProcessGenerator(object):
 		W = tf.get_variable("W_r", [self.state_size, self.feature_size])
 		b = tf.get_variable("b_r", [self.feature_size], initializer=tf.constant_initializer(0.0))
 		sigma = tf.nn.elu(tf.matmul(cur_state, W) + b) + 1
-		stoch_action = sigma * tf.sqrt(-2 * tf.log(tf.random_uniform(tf.shape(sigma), minval=0, maxval=1)))
+		stoch_action = sigma * 0.5 * -1 * tf.log(tf.random_uniform(tf.shape(sigma), minval=0, maxval=1))
 		cur_action = tf.add(prv_action, stoch_action)
 		# action has shape [num_seq, feature_size]
 		# state has shape  [num_seq, state_size]
@@ -197,7 +200,7 @@ class PointProcessGenerator(object):
 			init = tf.global_variables_initializer()
 			sess.run(init)
 
-		imit_times, states_history = sess.run([self.times, self.states])
+		imit_times, states_history = sess.run([self.learner_times, self.states])
 		return imit_times, states_history
 
 	def train(self, sess, input_data, test_data=None, pretrained=False):
@@ -219,6 +222,9 @@ class PointProcessGenerator(object):
 			# Run optimization
 			sess.run(self.optimizer, feed_dict={self.input_data: batch_input_data})
 			if step % self.display_step == 0:
+				# Plots
+				imit_times = sess.run(self.learner_times)
+				qqplot(imit_times, output_path=("resource/img/qqplot/test"+str(step)))
 				# Calculate batch loss and accuracy
 				train_loss = sess.run(self.loss, feed_dict={self.input_data: batch_input_data})
 				print >> sys.stderr, "[%s] Iter: %d" % (arrow.now(), (step * self.batch_size))

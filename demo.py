@@ -15,7 +15,7 @@ import Simulate_Poisson as SP
 from imitpp import PointProcessGenerator
 
 if __name__ == "__main__":
-	np.random.seed(100)
+	# np.random.seed(103)
 
 	# Configuration parameters
 	seq_len      = 30
@@ -31,7 +31,7 @@ if __name__ == "__main__":
 	max_len  = max([ len(ppseq) for ppseq in ppsample ])
 	# Check if max length of the poisson process sequences is less than the preset sequence length
 	if seq_len < max_len:
-		raise("Insecure seq_len %d < max_len %d." % (seq_len, max_len))
+		raise Exception("Insecure seq_len %d < max_len %d." % (seq_len, max_len))
 	# Padding zeros for poisson process sequences
 	expert_actions = np.zeros((data_size, seq_len, feature_size))
 	for data_ind in range(data_size):
@@ -47,13 +47,21 @@ if __name__ == "__main__":
 			batch_size=batch_size,
 			state_size=state_size,
 			feature_size=feature_size,
-			iters=1000, display_step=1, lr=1e-3)
+			iters=10000, display_step=1, lr=1e-4)
 
-		# Training
+		# Loading well-trained model
+		# file_name = ...
+		# tf_saver = tf.train.Saver()
+        # tf_saver.restore(sess, "resource/model/%s" % file_name)
+
+		# Training new model
 		ppg.train(sess, expert_actions)
-		# Saving training results
 		tf_saver = tf.train.Saver()
 		tf_saver.save(sess, "resource/model/seql%d.bts%d.sts%d.fts%d.tmx%d.dts%d" % \
-		                    seq_len, batch_size, state_size, feature_size, t_max, data_size)
-		# Generating
-		actions, states_history = ppg.generate(sess, pretrained=True)
+		                    (seq_len, batch_size, state_size, feature_size, t_max, data_size))
+
+		# # Generating
+		# actions, states_history = ppg.generate(sess, pretrained=True)
+		# np.savetxt("resource/generation/seql%d.bts%d.sts%d.fts%d.tmx%d.dts%d.txt" % \
+		#            (seq_len, batch_size, state_size, feature_size, t_max, data_size), \
+		# 		   actions, delimiter=',')
