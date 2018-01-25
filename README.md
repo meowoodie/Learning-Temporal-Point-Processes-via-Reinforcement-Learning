@@ -96,4 +96,8 @@ Below are generated test actions.
         [ 0.        ,  0.        ,  0.        ]], dtype=float32)
 ```
 
+Experiments Results
+---
+https://github.com/meowoodie/Imitation-Learning-for-Point-Process/blob/master/results/poisson_exp.gif
+
 > A runnable demo has been attached to this repo in `demo.py`.
