@@ -98,6 +98,6 @@ Below are generated test actions.
 
 Experiments Results
 ---
-https://github.com/meowoodie/Imitation-Learning-for-Point-Process/blob/master/results/poisson_exp.gif
+!(poisson-exp)[https://github.com/meowoodie/Imitation-Learning-for-Point-Process/blob/master/results/poisson_exp.gif]
 
 > A runnable demo has been attached to this repo in `demo.py`.
