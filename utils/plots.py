@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
+Utilities for visualizing results of experiments
 """
 
 import sys

@@ -12,7 +12,7 @@ import random
 import numpy as np
 import tensorflow as tf
 
-from plots import qqplot
+# from utils.plots import qqplot
 
 class PointProcessGenerator(object):
 	"""
@@ -68,6 +68,7 @@ class PointProcessGenerator(object):
 		#                    .minimize(self.loss)
 
 		# Generator Computational Graph
+		self.expert_times  = expert_actions[:, :, 0]
 		self.learner_times = tf.multiply(tf.cast(learner_actions[:, :, 0] < self.t_max, tf.float32), learner_actions[:, :, 0])
 		self.states        = states
 
@@ -223,8 +224,8 @@ class PointProcessGenerator(object):
 			sess.run(self.optimizer, feed_dict={self.input_data: batch_input_data})
 			if step % self.display_step == 0:
 				# Plots
-				imit_times = sess.run(self.learner_times)
-				qqplot(imit_times, output_path=("resource/img/qqplot/test"+str(step)))
+				# imit_times = sess.run(self.expert_times, feed_dict={self.input_data: batch_input_data})
+				# qqplot(imit_times, output_path=("resource/img/qqplot/test"+str(step)))
 				# Calculate batch loss and accuracy
 				train_loss = sess.run(self.loss, feed_dict={self.input_data: batch_input_data})
 				print >> sys.stderr, "[%s] Iter: %d" % (arrow.now(), (step * self.batch_size))

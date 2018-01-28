@@ -1,4 +1,6 @@
 .DS_Store
 archive/*
 mimic-iii/*
+resource/*
+911calls/*
 *.pyc

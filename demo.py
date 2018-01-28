@@ -2,8 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-A simple demo for generating poisson process sequences and use them to train a
-poinsson process generator.
+Experiment Synthetic Data
 """
 
 import sys
@@ -11,11 +10,12 @@ import arrow
 import random
 import numpy as np
 import tensorflow as tf
-import Simulate_Poisson as SP
+
+from utils.poissongen as pg
 from imitpp import PointProcessGenerator
 
 if __name__ == "__main__":
-	np.random.seed(100)
+	# np.random.seed(100)
 
 	# Configuration parameters
 	seq_len      = 30
@@ -26,8 +26,8 @@ if __name__ == "__main__":
 	data_size    = 2000
 
 	# Generate poisson process sequences
-	pp       = SP.IntensityHomogenuosPoisson(1.0)
-	ppsample = SP.generate_sample(pp, t_max, data_size)
+	pp       = pg.IntensityHomogenuosPoisson(1.0)
+	ppsample = pg.generate_sample(pp, t_max, data_size)
 	max_len  = max([ len(ppseq) for ppseq in ppsample ])
 	# Check if max length of the poisson process sequences is less than the preset sequence length
 	if seq_len < max_len:
