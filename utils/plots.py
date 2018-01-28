@@ -30,7 +30,7 @@ def get_intensity(seqs, n_t=50, t0=0, T=None):
 
     return pdf, np.arange(t0, T, delta_t)
 
-def integral_diffs(seqs, intensity):
+def get_integral_diffs(seqs, intensity):
     integral_diffs = []
     for seq in seqs:
         seq_indice    = range(len(filter(lambda t: t>0, seq)))
@@ -40,6 +40,8 @@ def integral_diffs(seqs, intensity):
         integral_diff.insert(0, intensity.get_integral(seq[0], []) - 0)
         integral_diffs += integral_diff
     return integral_diffs
+
+# Plotting Methods
 
 def qqplot4seqs(time_seqs,
                 x_left=0., x_right=8., y_left=0., y_right=8.,

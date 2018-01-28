@@ -197,4 +197,3 @@ def generate_sample(intensity, T, n):
 #     intensity_hawkes_gaussianmixture = IntensityHawkesPlusGaussianMixture(mu=1, alpha=0.3, beta=1,
 #                                                                           k=2, centers=[T/4, T*3/4], stds=[1, 1], coefs=[1, 1])
 #     # seqs = generate_sample(intensity_hawkes_poly, T, n)
-#     print intensity_hawkes_gaussianmixture.get_integral(10, [1,2,3,4,5,6,7,8])
