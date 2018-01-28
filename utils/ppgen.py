@@ -68,6 +68,17 @@ class IntensityPoly(Intensity):
             raise Exception("Inequality lies in the numbers of segs and A.")
 
     def get_value(self, t=None, past_ts=None):
+        return self._get_value(t)
+
+    def get_upper_bound(self, past_ts=None, t=None, to_t=None):
+        max_val = 0
+        segs_within_range = [ s for s in self.segs if s > t and s < to_t ]
+        if len(segs_within_range) > 0:
+            max_val = max([ self._get_value(t) for s in segs_within_range ])
+        max_val = max([ self._get_value(t), self._get_value(to_t), max_val ])
+        return max_val
+
+    def _get_value(self, t):
         if t > self.segs[-1]:
             raise Exception("t is out of range.")
         segs_before_t = [ s for s in self.segs if s < t ]
@@ -80,24 +91,20 @@ class IntensityPoly(Intensity):
             value = b
         return value
 
-    def get_upper_bound(self, past_ts=None, t=None, to_t=None):
-        segs_within_range = [ s for s in self.segs if s > t and s < to_t ]
-        max_val = max([ self.get_value(s) for s in segs_within_range ])
-        max_val = max([ self.get_value(t), self.get_value(to_t), max_val ])
-        return max_val
-
 class IntensityHawkesPlusPoly(IntensityHawkes, IntensityPoly):
 
     def __init__(self, mu=1, alpha=0.3, beta=1,
                        segs=[0, 1, 2, 3], b=0, A=[1, 2, -3]):
-        IntensityHawkes.__init__(self, mu=mu, alpha=alpha, beta=beta)
         IntensityPoly.__init__(self, segs=segs, b=b, A=A)
+        IntensityHawkes.__init__(self, mu=mu, alpha=alpha, beta=beta)
 
     def get_value(self, t=None, past_ts=None):
+        print "haha"
         return IntensityHawkes.get_value(self, t=t, past_ts=past_ts) + \
                IntensityPoly.get_value(self, t=t)
 
     def get_upper_bound(self, past_ts=None, t=None, to_t=None):
+        print "hoho"
         return IntensityPoly.get_upper_bound(self, t=t, to_t=to_t) + \
                IntensityHawkes.get_upper_bound(self, past_ts=past_ts, t=t)
 
@@ -109,15 +116,14 @@ def generate_sample(intensity, T, n):
         cur_t   = 0
         while True:
             intens1 = intensity.get_upper_bound(past_ts=past_ts, t=cur_t, to_t=T)
-            t_delta = np.random.exponential(1/intens1)
+            t_delta = np.random.exponential(1.0/float(intens1))
             next_t  = cur_t + t_delta
-            print "cur_t:%f, next_t:%f, delta_t:%f" % (cur_t, next_t, t_delta)
+            # print "cur_t:%f, next_t:%f, delta_t:%f" % (cur_t, next_t, t_delta)
             if next_t > T:
                 break
-            # print next_t, past_ts
             intens2 = intensity.get_value(t=next_t, past_ts=past_ts)
             u       = np.random.uniform()
-            if intens2/intens1 >= u:
+            if float(intens2)/float(intens1) >= u:
                 past_ts.append(next_t)
             cur_t = next_t
         if len(past_ts) > 1:
@@ -129,15 +135,14 @@ def generate_sample(intensity, T, n):
 
 if __name__ == "__main__":
     n = 2
-    T = 10
+    T = 20
     intensity_hawkes      = IntensityHawkes(mu=1, alpha=0.3, beta=1)
     intensity_poly        = IntensityPoly(segs=[0, T/4, T*2/4, T*3/4, T],
-                                          b=1, A=[0.99, -0.99, 0.99, -0.99])
+                                          b=1, A=[1, -1, 1, -1])
     intensity_hawkes_poly = IntensityHawkesPlusPoly(mu=1, alpha=0.3, beta=1,
                                                     segs=[0, T/4, T*2/4, T*3/4, T],
                                                     b=1, A=[1, -1, 1, -1])
-    seqs = generate_sample(intensity_poly, T, n)
-
+    seqs = generate_sample(intensity_hawkes, T, n)
 
     for seq in seqs:
         print seq
