@@ -69,14 +69,14 @@ def qqplot4intdiff(intdiff):
     stats.probplot(intdiff, dist=stats.expon, fit=True, plot=ax)
     plt.show()
 
-if __name__ == "__main__":
-    test_file = "seql30.bts64.sts64.fts1.tmx15.dts2000.txt"
-    test_seqs = np.loadtxt("../resource/generation/%s" % test_file, delimiter=",")
-
-    T = 15
-    intensity_hawkes_poly = IntensityHawkesPlusPoly(mu=1, alpha=0.3, beta=1,
-                                                    segs=[0, T/4, T*2/4, T*3/4, T],
-                                                    b=1, A=[1, -1, 1, -1])
-
-    intdiff = integral_diffs(test_seqs, intensity_hawkes_poly)
-    qqplot4intdiff(intdiff)
+# if __name__ == "__main__":
+#     test_file = "seql30.bts64.sts64.fts1.tmx15.dts2000.txt"
+#     test_seqs = np.loadtxt("../resource/generation/%s" % test_file, delimiter=",")
+#
+#     T = 15
+#     intensity_hawkes_poly = IntensityHawkesPlusPoly(mu=1, alpha=0.3, beta=1,
+#                                                     segs=[0, T/4, T*2/4, T*3/4, T],
+#                                                     b=1, A=[1, -1, 1, -1])
+#
+#     intdiff = integral_diffs(test_seqs, intensity_hawkes_poly)
+#     qqplot4intdiff(intdiff)
