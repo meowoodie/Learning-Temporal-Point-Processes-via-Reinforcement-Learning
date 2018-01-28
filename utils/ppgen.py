@@ -8,7 +8,7 @@ import numpy as np
 class Intensity(object):
     __metaclass__ = abc.ABCMeta
 
-class IntensityGaussianMixtureKernel(Intensity):
+class IntensityGaussianMixture(Intensity):
 
     def __init__(self, k=2, centers=[2, 4], stds=[1, 1], coefs= [1, 1]):
         self.k       = k
@@ -16,21 +16,25 @@ class IntensityGaussianMixtureKernel(Intensity):
         self.stds    = stds
         self.coefs   = coefs
 
-    def get_value(self, t):
+    def get_value(self, t=None, past_ts=None):
+        return self._get_gaussianmixture_value(t)
+
+    def get_upper_bound(self, past_ts=None, t=None, to_t=None):
+        # max_val = sum([ self._get_gaussianmixture_value(center) for center in self.centers ])
+        max_val = max(self._get_gaussianmixture_value(t), self._get_gaussianmixture_value(to_t))
+        for i in range(self.k):
+            max_val = max(max_val, self._get_gaussianmixture_value(self.centers[i]))
+        for i in range(self.k-1):
+            point = (self.coefs[i]*self.centers[i]/self.stds[i] + self.coefs[i+1]*self.centers[i+1]/self.stds[i+1])/\
+                (self.coefs[i]/self.stds[i] + self.coefs[i+1]/self.stds[i+1])
+            max_val = max(max_val, self._get_gaussianmixture_value(point))
+        return max_val
+
+    def _get_gaussianmixture_value(self, t):
         inten = 0
         for i in range(self.k):
             inten += self.coefs[i] * scipy.stats.norm.pdf(t, self.centers[i], self.stds[i])
         return inten
-
-    def get_upper_bound(self, from_t, to_t):
-        max_val = max(self.get_value(from_t), self.get_value(to_t))
-        for i in range(self.k):
-            max_val = max(max_val, self.get_value(self.centers[i]))
-        for i in range(self.k-1):
-            point = (self.coefs[i]*self.centers[i]/self.stds[i] + self.coefs[i+1]*self.centers[i+1]/self.stds[i+1])/\
-                (self.coefs[i]/self.stds[i] + self.coefs[i+1]/self.stds[i+1])
-            max_val = max(max_val, self.get_value(point))
-        return max_val
 
 class IntensityHomogenuosPoisson(Intensity):
 
@@ -68,17 +72,17 @@ class IntensityPoly(Intensity):
             raise Exception("Inequality lies in the numbers of segs and A.")
 
     def get_value(self, t=None, past_ts=None):
-        return self._get_value(t)
+        return self._get_poly_value(t)
 
     def get_upper_bound(self, past_ts=None, t=None, to_t=None):
         max_val = 0
         segs_within_range = [ s for s in self.segs if s > t and s < to_t ]
         if len(segs_within_range) > 0:
-            max_val = max([ self._get_value(t) for s in segs_within_range ])
-        max_val = max([ self._get_value(t), self._get_value(to_t), max_val ])
+            max_val = max([ self._get_poly_value(t) for s in segs_within_range ])
+        max_val = max([ self._get_poly_value(t), self._get_poly_value(to_t), max_val ])
         return max_val
 
-    def _get_value(self, t):
+    def _get_poly_value(self, t):
         if t > self.segs[-1]:
             raise Exception("t is out of range.")
         segs_before_t = [ s for s in self.segs if s < t ]
@@ -99,13 +103,26 @@ class IntensityHawkesPlusPoly(IntensityHawkes, IntensityPoly):
         IntensityHawkes.__init__(self, mu=mu, alpha=alpha, beta=beta)
 
     def get_value(self, t=None, past_ts=None):
-        print "haha"
         return IntensityHawkes.get_value(self, t=t, past_ts=past_ts) + \
                IntensityPoly.get_value(self, t=t)
 
     def get_upper_bound(self, past_ts=None, t=None, to_t=None):
-        print "hoho"
         return IntensityPoly.get_upper_bound(self, t=t, to_t=to_t) + \
+               IntensityHawkes.get_upper_bound(self, past_ts=past_ts, t=t)
+
+class IntensityHawkesPlusGaussianMixture(IntensityHawkes, IntensityGaussianMixture):
+
+    def __init__(self, mu=1, alpha=0.3, beta=1,
+                       k=2, centers=[2, 4], stds=[1, 1], coefs=[1, 1]):
+        IntensityHawkes.__init__(self, mu=mu, alpha=alpha, beta=beta)
+        IntensityGaussianMixture.__init__(self, k=k, centers=centers, stds=stds, coefs=coefs)
+
+    def get_value(self, t=None, past_ts=None):
+        return IntensityHawkes.get_value(self, t=t, past_ts=past_ts) + \
+               IntensityGaussianMixture.get_value(self, t=t)
+
+    def get_upper_bound(self, past_ts=None, t=None, to_t=None):
+        return IntensityGaussianMixture.get_upper_bound(self, t=t, to_t=to_t) + \
                IntensityHawkes.get_upper_bound(self, past_ts=past_ts, t=t)
 
 def generate_sample(intensity, T, n):
@@ -142,7 +159,9 @@ if __name__ == "__main__":
     intensity_hawkes_poly = IntensityHawkesPlusPoly(mu=1, alpha=0.3, beta=1,
                                                     segs=[0, T/4, T*2/4, T*3/4, T],
                                                     b=1, A=[1, -1, 1, -1])
-    seqs = generate_sample(intensity_hawkes, T, n)
+    intensity_hawkes_gaussianmixture = IntensityHawkesPlusGaussianMixture(mu=1, alpha=0.3, beta=1,
+                                                                          k=2, centers=[T/4, T*3/4], stds=[1, 1], coefs=[1, 1])
+    seqs = generate_sample(intensity_hawkes_gaussianmixture, T, n)
 
     for seq in seqs:
         print seq
