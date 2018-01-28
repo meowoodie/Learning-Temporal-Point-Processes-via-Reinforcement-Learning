@@ -20,14 +20,14 @@ class IntensityGaussianMixture(Intensity):
         return self._get_gaussianmixture_value(t)
 
     def get_upper_bound(self, past_ts=None, t=None, to_t=None):
-        # max_val = sum([ self._get_gaussianmixture_value(center) for center in self.centers ])
-        max_val = max(self._get_gaussianmixture_value(t), self._get_gaussianmixture_value(to_t))
-        for i in range(self.k):
-            max_val = max(max_val, self._get_gaussianmixture_value(self.centers[i]))
-        for i in range(self.k-1):
-            point = (self.coefs[i]*self.centers[i]/self.stds[i] + self.coefs[i+1]*self.centers[i+1]/self.stds[i+1])/\
-                (self.coefs[i]/self.stds[i] + self.coefs[i+1]/self.stds[i+1])
-            max_val = max(max_val, self._get_gaussianmixture_value(point))
+        max_val = sum([ self._get_gaussianmixture_value(center) for center in self.centers ])
+        # max_val = max(self._get_gaussianmixture_value(t), self._get_gaussianmixture_value(to_t))
+        # for i in range(self.k):
+        #     max_val = max(max_val, self._get_gaussianmixture_value(self.centers[i]))
+        # for i in range(self.k-1):
+        #     point = (self.coefs[i]*self.centers[i]/self.stds[i] + self.coefs[i+1]*self.centers[i+1]/self.stds[i+1])/\
+        #         (self.coefs[i]/self.stds[i] + self.coefs[i+1]/self.stds[i+1])
+        #     max_val = max(max_val, self._get_gaussianmixture_value(point))
         return max_val
 
     def _get_gaussianmixture_value(self, t):
@@ -155,13 +155,10 @@ if __name__ == "__main__":
     T = 20
     intensity_hawkes      = IntensityHawkes(mu=1, alpha=0.3, beta=1)
     intensity_poly        = IntensityPoly(segs=[0, T/4, T*2/4, T*3/4, T],
-                                          b=1, A=[1, -1, 1, -1])
+                                          b=0, A=[1, -1, 1, -1])
     intensity_hawkes_poly = IntensityHawkesPlusPoly(mu=1, alpha=0.3, beta=1,
                                                     segs=[0, T/4, T*2/4, T*3/4, T],
                                                     b=1, A=[1, -1, 1, -1])
     intensity_hawkes_gaussianmixture = IntensityHawkesPlusGaussianMixture(mu=1, alpha=0.3, beta=1,
                                                                           k=2, centers=[T/4, T*3/4], stds=[1, 1], coefs=[1, 1])
-    seqs = generate_sample(intensity_hawkes_gaussianmixture, T, n)
-
-    for seq in seqs:
-        print seq
+    seqs = generate_sample(intensity_hawkes_poly, T, n)
