@@ -8,6 +8,17 @@ import numpy as np
 class Intensity(object):
     __metaclass__ = abc.ABCMeta
 
+class IntensityHomogenuosPoisson(Intensity):
+
+    def __init__(self, lam):
+        self.lam = lam
+
+    def get_value(self, t=None, past_ts=None):
+        return self.lam
+
+    def get_upper_bound(self, past_ts=None, t=None, to_t=None):
+        return self.lam
+
 class IntensityGaussianMixture(Intensity):
 
     def __init__(self, k=2, centers=[2, 4], stds=[1, 1], coefs= [1, 1]):
@@ -21,13 +32,6 @@ class IntensityGaussianMixture(Intensity):
 
     def get_upper_bound(self, past_ts=None, t=None, to_t=None):
         max_val = sum([ self._get_gaussianmixture_value(center) for center in self.centers ])
-        # max_val = max(self._get_gaussianmixture_value(t), self._get_gaussianmixture_value(to_t))
-        # for i in range(self.k):
-        #     max_val = max(max_val, self._get_gaussianmixture_value(self.centers[i]))
-        # for i in range(self.k-1):
-        #     point = (self.coefs[i]*self.centers[i]/self.stds[i] + self.coefs[i+1]*self.centers[i+1]/self.stds[i+1])/\
-        #         (self.coefs[i]/self.stds[i] + self.coefs[i+1]/self.stds[i+1])
-        #     max_val = max(max_val, self._get_gaussianmixture_value(point))
         return max_val
 
     def _get_gaussianmixture_value(self, t):
@@ -36,16 +40,10 @@ class IntensityGaussianMixture(Intensity):
             inten += self.coefs[i] * scipy.stats.norm.pdf(t, self.centers[i], self.stds[i])
         return inten
 
-class IntensityHomogenuosPoisson(Intensity):
-
-    def __init__(self, lam):
-        self.lam = lam
-
-    def get_value(self, t=None, past_ts=None):
-        return self.lam
-
-    def get_upper_bound(self, past_ts=None, t=None, to_t=None):
-        return self.lam
+    def get_integral(self, t, past_ts=None):
+        return sum([ coef * (scipy.stats.norm.cdf(t, center, std) - \
+                     scipy.stats.norm.cdf(0, center, std))
+                     for coef, center, std in zip(self.coefs, self.centers, self.stds) ])
 
 class IntensityHawkes(Intensity):
 
@@ -61,6 +59,10 @@ class IntensityHawkes(Intensity):
     def get_upper_bound(self, past_ts=None, t=None, to_t=None):
         max_val = self.mu + np.sum(self.alpha * self.beta * np.exp(-self.beta * np.subtract(t, past_ts)))
         return max_val
+
+    def get_integral(self, t, past_ts):
+        return self.mu * t + \
+               self.alpha * np.sum(1 - np.exp(-self.beta * (t - np.array(past_ts))))
 
 class IntensityPoly(Intensity):
 
@@ -95,6 +97,31 @@ class IntensityPoly(Intensity):
             value = b
         return value
 
+    def get_integral(self, t, past_ts=None):
+        if t > self.segs[-1]:
+            raise Exception("t is out of range.")
+        segs_before_t = [ s for s in self.segs if s < t ]
+
+        # get starting intercepts (bs) for each of segments (size = len(segs_before_t) + 1)
+        bs = [self.b]
+        for seg_ind in range(len(segs_before_t)-1):
+            b = bs[seg_ind] + self.A[seg_ind] * \
+                (segs_before_t[seg_ind+1] - segs_before_t[seg_ind])
+            bs.append(b)
+        bs.append(self._get_poly_value(t)) # last intercept
+
+        # get length of each of segments (size = len(segs_before_t))
+        lens = []
+        for seg_ind in range(len(segs_before_t)-1):
+            lens.append(segs_before_t[seg_ind+1] - segs_before_t[seg_ind])
+        last_seg = segs_before_t[-1] if len(segs_before_t) > 0 else 0
+        lens.append(t - last_seg) # lengths of last segments
+
+        # get integrals (area) for each of segments
+        integrals = [ (width1 + width2) * height / 2.
+                      for width1, width2, height in zip(bs[:-1], bs[1:], lens) ]
+        return sum(integrals)
+
 class IntensityHawkesPlusPoly(IntensityHawkes, IntensityPoly):
 
     def __init__(self, mu=1, alpha=0.3, beta=1,
@@ -110,6 +137,10 @@ class IntensityHawkesPlusPoly(IntensityHawkes, IntensityPoly):
         return IntensityPoly.get_upper_bound(self, t=t, to_t=to_t) + \
                IntensityHawkes.get_upper_bound(self, past_ts=past_ts, t=t)
 
+    def get_integral(self, t, past_ts):
+        return IntensityPoly.get_integral(self, t=t) + \
+               IntensityHawkes.get_integral(self, t=t, past_ts=past_ts)
+
 class IntensityHawkesPlusGaussianMixture(IntensityHawkes, IntensityGaussianMixture):
 
     def __init__(self, mu=1, alpha=0.3, beta=1,
@@ -124,6 +155,10 @@ class IntensityHawkesPlusGaussianMixture(IntensityHawkes, IntensityGaussianMixtu
     def get_upper_bound(self, past_ts=None, t=None, to_t=None):
         return IntensityGaussianMixture.get_upper_bound(self, t=t, to_t=to_t) + \
                IntensityHawkes.get_upper_bound(self, past_ts=past_ts, t=t)
+
+    def get_integral(self, t, past_ts):
+        return IntensityGaussianMixture.get_integral(self, t=t) + \
+               IntensityHawkes.get_integral(self, t=t, past_ts=past_ts)
 
 def generate_sample(intensity, T, n):
     seqs = []
@@ -161,4 +196,5 @@ if __name__ == "__main__":
                                                     b=1, A=[1, -1, 1, -1])
     intensity_hawkes_gaussianmixture = IntensityHawkesPlusGaussianMixture(mu=1, alpha=0.3, beta=1,
                                                                           k=2, centers=[T/4, T*3/4], stds=[1, 1], coefs=[1, 1])
-    seqs = generate_sample(intensity_hawkes_poly, T, n)
+    # seqs = generate_sample(intensity_hawkes_poly, T, n)
+    print intensity_hawkes_gaussianmixture.get_integral(10, [1,2,3,4,5,6,7,8])
