@@ -4,12 +4,12 @@ import numpy as np
 from imitpp_v2 import PointProcessGenerator5
 from utils.ppgen import *
 
-T_max = 15
+T_max = 15.
 seq_num = 2000
 batch_size = 64
 
 intensity = IntensityHawkesPlusPoly(mu=1, alpha=0.3, beta=1,
-                                    segs=[0, T_max/4, T_max*2/4, T_max*3/4, T_max],
+                                    segs=[0, T_max/4., T_max*2./4., T_max*3./4., T_max],
                                     b=1, A=[1, -1, 1, -1])
 
 expert_time = generate_sample(intensity, T=T_max, n=seq_num)
