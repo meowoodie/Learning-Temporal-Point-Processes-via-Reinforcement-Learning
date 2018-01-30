@@ -12,7 +12,7 @@ import numpy as np
 import tensorflow as tf
 
 from utils.poissongen as pg
-from imitpp import PointProcessGenerator
+from imitpp_v1 import PointProcessGenerator
 
 if __name__ == "__main__":
 	# np.random.seed(100)

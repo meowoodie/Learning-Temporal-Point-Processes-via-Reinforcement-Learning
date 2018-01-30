@@ -121,6 +121,24 @@ class IntensityPoly(Intensity):
         integrals = [ (width1 + width2) * height / 2.
                       for width1, width2, height in zip(bs[:-1], bs[1:], lens) ]
         return sum(integrals)
+#
+# class IntensitySelfCorrecting(Intensity):
+#
+#     def __init__(self, mu=1, alpha=0.3):
+#         self.mu    = mu
+#         self.alpha = alpha
+#
+#     def get_value(self, t, past_ts):
+#         return np.exp(self.mu * t - self.alpha * len(past_ts))
+# 
+#     def get_upper_bound(self, past_ts=None, t=None, to_t):
+#         # TODO: Improve this upper bound
+#         return np.exp(self.mu * to_t)
+#
+#     def get_integral(self, t, past_ts):
+#         for past_t in past_ts:
+#             past_t
+#         return
 
 class IntensityHawkesPlusPoly(IntensityHawkes, IntensityPoly):
 
@@ -168,6 +186,7 @@ def generate_sample(intensity, T, n):
         cur_t   = 0
         while True:
             intens1 = intensity.get_upper_bound(past_ts=past_ts, t=cur_t, to_t=T)
+            intens1 = intens1 if intens1 != 0 else 1e-4
             t_delta = np.random.exponential(1.0/float(intens1))
             next_t  = cur_t + t_delta
             # print "cur_t:%f, next_t:%f, delta_t:%f" % (cur_t, next_t, t_delta)
@@ -185,15 +204,16 @@ def generate_sample(intensity, T, n):
             break
     return seqs
 
-# if __name__ == "__main__":
-#     n = 2
-#     T = 20
-#     intensity_hawkes      = IntensityHawkes(mu=1, alpha=0.3, beta=1)
-#     intensity_poly        = IntensityPoly(segs=[0, T/4, T*2/4, T*3/4, T],
-#                                           b=0, A=[1, -1, 1, -1])
-#     intensity_hawkes_poly = IntensityHawkesPlusPoly(mu=1, alpha=0.3, beta=1,
-#                                                     segs=[0, T/4, T*2/4, T*3/4, T],
-#                                                     b=1, A=[1, -1, 1, -1])
-#     intensity_hawkes_gaussianmixture = IntensityHawkesPlusGaussianMixture(mu=1, alpha=0.3, beta=1,
-#                                                                           k=2, centers=[T/4, T*3/4], stds=[1, 1], coefs=[1, 1])
-#     # seqs = generate_sample(intensity_hawkes_poly, T, n)
+if __name__ == "__main__":
+    n = 2
+    T = 10.
+    intensity_hawkes      = IntensityHawkes(mu=1, alpha=0.3, beta=1)
+    intensity_poly        = IntensityPoly(segs=[0, T/4., T*2./4., T*3./4., T],
+                                          b=0, A=[2, -2, 2, -2])
+    intensity_hawkes_poly = IntensityHawkesPlusPoly(mu=1, alpha=0.3, beta=1,
+                                                    segs=[0, T/4, T*2/4, T*3/4, T],
+                                                    b=1, A=[1, -1, 1, -1])
+    intensity_hawkes_gaussianmixture = IntensityHawkesPlusGaussianMixture(mu=1, alpha=0.3, beta=1,
+                                                                          k=2, centers=[T/4, T*3/4], stds=[1, 1], coefs=[1, 1])
+
+    print generate_sample(intensity_poly, T, n)
