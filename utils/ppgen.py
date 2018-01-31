@@ -130,7 +130,7 @@ class IntensityPoly(Intensity):
 #
 #     def get_value(self, t, past_ts):
 #         return np.exp(self.mu * t - self.alpha * len(past_ts))
-# 
+#
 #     def get_upper_bound(self, past_ts=None, t=None, to_t):
 #         # TODO: Improve this upper bound
 #         return np.exp(self.mu * to_t)
