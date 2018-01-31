@@ -4,7 +4,7 @@
 """
 Imitation Learning for Point Process
 
-
+Mostly done by Prof. Le Song
 """
 
 import sys
@@ -14,6 +14,8 @@ import numpy as np
 import tensorflow as tf
 from scipy import stats
 import matplotlib.pyplot as plt
+
+from utils.plots import intensityplot4seqs
 
 class PointProcessGenerator5(object):
 	"""
@@ -28,21 +30,6 @@ class PointProcessGenerator5(object):
 		self.state_size = state_size
 		self.seq_len = seq_len
 		self.batch_size = batch_size
-
-		self.knock_out = 1- tf.contrib.kfac.utils.kronecker_product(
-			tf.eye(2*self.batch_size),
-			tf.ones([self.seq_len, self.seq_len])
-		)
-
-
-		# self.W = 0.01 * tf.random_normal([state_size + 1, state_size])
-		# self.b1 = 0.01 * tf.random_normal([1, state_size])
-		# self.V = 0.01 * tf.random_normal([state_size, 1])
-		# self.b2 = 0.01 * tf.random_normal([1])
-		# self.W = tf.constant(np.array([[0.2],[0.3]], dtype=np.float32))
-		# self.b1 = tf.constant(np.array([[0.4]], dtype=np.float32))
-		# self.V = tf.constant(np.array([[0.7]], dtype=np.float32))
-		# self.b2 = tf.constant(np.array([0.6], dtype=np.float32))
 
 		self.W = tf.Variable(0.00001 * tf.random_normal([state_size + 1, state_size]))
 		self.W2 = tf.Variable(0.00001 * tf.random_normal([state_size, state_size]))
@@ -71,7 +58,11 @@ class PointProcessGenerator5(object):
 			-tf.square(basis_time - tf.transpose(basis_time)) / (self.kernel_bandwidth)
 		)
 		# knock out all self interaction terms to get rid of the bias
-		norm2_kernel = tf.multiply(norm2_kernel, self.knock_out)
+		knock_out = 1 - tf.contrib.kfac.utils.kronecker_product(
+			tf.eye(2*self.batch_size),
+			tf.ones([self.seq_len, self.seq_len])
+		)
+		norm2_kernel = tf.multiply(norm2_kernel, knock_out)
 
 		block_size = self.batch_size*self.seq_len
 
@@ -200,7 +191,7 @@ class PointProcessGenerator5(object):
 		start_index += self.batch_size
 		return batch_index, start_index
 
-	def train3(self, sess, expert_time_pool, outer_iters=800, inner_iters=2, display_step=1):
+	def train3(self, sess, expert_time_pool, outer_iters=1, inner_iters=2, display_step=1):
 
 		expert_time = tf.placeholder(
 			tf.float32,
@@ -262,9 +253,9 @@ class PointProcessGenerator5(object):
 		step = 0
 		start_index = 0
 
-		fig = plt.figure()
-		ax = fig.add_subplot(111)
-		plt.ion()
+		# fig = plt.figure()
+		# ax = fig.add_subplot(111)
+		# plt.ion()
 
 		# Add an op to initialize the variables.
 
@@ -330,39 +321,41 @@ class PointProcessGenerator5(object):
 					print >> sys.stderr, "[%s] Outer: %d, Inner: %d, loss: %f" \
 										 % (arrow.now(), step, i, train_loss)
 
-					test_point_diff = np.concatenate(
-						[np.reshape(test_point_mat[:,[0]], (self.batch_size,1)),
-									np.diff(test_point_mat, axis=1)],
-						axis=1
-					)
-					test_point_flat = test_point_mat.flatten()
-					idx = (test_point_flat < self.T_max)
+					# test_point_diff = np.concatenate(
+					# 	[np.reshape(test_point_mat[:,[0]], (self.batch_size,1)),
+					# 				np.diff(test_point_mat, axis=1)],
+					# 	axis=1
+					# )
+					# test_point_flat = test_point_mat.flatten()
+					# idx = (test_point_flat < self.T_max)
 
-					ax.clear()
-					res, res2 = stats.probplot(
-						test_point_diff.flatten()[idx],
-						dist=stats.expon, fit=True, plot=ax
-					)
+					# ax.clear()
+					# res, res2 = stats.probplot(
+					# 	test_point_diff.flatten()[idx],
+					# 	dist=stats.expon, fit=True, plot=ax
+					# )
 					# print(res[0])
-					plt.plot(res[0], res[0])
+					# plt.plot(res[0], res[0])
 
-					train_point_diff = np.concatenate(
-						[np.reshape(expert_time_pool[batch_index,[0]], (self.batch_size,1)),
-						 np.diff(expert_time_pool[batch_index,:], axis=1)],
-						axis=1
-					)
+					# train_point_diff = np.concatenate(
+					# 	[np.reshape(expert_time_pool[batch_index,[0]], (self.batch_size,1)),
+					# 	 np.diff(expert_time_pool[batch_index,:], axis=1)],
+					# 	axis=1
+					# )
 
-					train_point_flat = expert_time_pool[batch_index,:].flatten()
-					idx = (train_point_flat < self.T_max)
-					res, res2 = stats.probplot(
-						train_point_diff.flatten()[idx],
-						dist=stats.expon, fit=True, plot=ax
-					)
+					# train_point_flat = expert_time_pool[batch_index,:].flatten()
+					# idx = (train_point_flat < self.T_max)
+					# res, res2 = stats.probplot(
+					# 	train_point_diff.flatten()[idx],
+					# 	dist=stats.expon, fit=True, plot=ax
+					# )
 
-					plt.pause(0.02)
+					intensityplot4seqs(test_point_mat, expert_time_pool[batch_index,:],
+					                   T=self.T_max, n_t=100, t0=0,
+					                   file_path="resource/img/intensity/iter%d.png" % i)
 
-		tf_saver = tf.train.Saver()
-		tf_saver.save(sess, "resource/model.song_le/imitpp5.Jan.29.Poly")
+		# tf_saver = tf.train.Saver()
+		# tf_saver.save(sess, "resource/model.song_le/imitpp5.Jan.29.Poly")
 
 		# print("W:")
 		# print(sess.run(self.W))
