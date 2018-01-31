@@ -9,6 +9,7 @@ T_max             = 15.
 seq_num           = 2000
 batch_size        = 64
 training_iters    = 100
+generate_iters    = 100 # number of generated sequences
 model_path        = "resource/model.song_le/imitpp5"
 learner_seqs_path = "resource/generation/learner_seq.txt"
 
@@ -49,8 +50,7 @@ with tf.Session() as sess:
     tf_saver.restore(sess, model_path)
     # Generate learner sequences
     learner_seqs = np.zeros((0, seq_len))
-    iters = 100 # number of generated sequences
-    for ind in range(iters):
+    for ind in range(generate_iters):
         rand_uniform_pool = np.random.rand(batch_size, seq_len).astype(np.float32)
         output_seqs, cum_output_seqs = sess.run(ppg.generate3(rand_uniform_pool))
         learner_seqs = np.concatenate((learner_seqs, cum_output_seqs), axis=0)

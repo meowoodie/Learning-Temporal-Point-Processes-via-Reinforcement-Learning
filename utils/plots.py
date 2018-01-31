@@ -122,6 +122,7 @@ def intensityplot4seqs(learner_seqs, expert_seqs, T, n_t=100, t0=0,
     plt.legend(["Expert", "Learner"], loc="lower right")
     plt.title("Intensity")
     fig.savefig(file_path, bbox_inches="tight")
+    print "saving plots"
 
 
 

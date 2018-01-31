@@ -352,7 +352,7 @@ class PointProcessGenerator5(object):
 
 					intensityplot4seqs(test_point_mat, expert_time_pool[batch_index,:],
 					                   T=self.T_max, n_t=100, t0=0,
-					                   file_path="resource/img/intensity/iter%d.png" % i)
+					                   file_path="resource/img/intensity/iter%d.png" % step)
 
 		# tf_saver = tf.train.Saver()
 		# tf_saver.save(sess, "resource/model.song_le/imitpp5.Jan.29.Poly")
