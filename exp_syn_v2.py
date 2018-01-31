@@ -5,10 +5,13 @@ from imitpp_v2 import PointProcessGenerator5
 from utils.ppgen import *
 
 # Configurations
-T_max = 15.
-seq_num = 2000
-batch_size = 64
-training_iters = 100
+T_max             = 15.
+seq_num           = 2000
+batch_size        = 64
+training_iters    = 100
+model_path        = "resource/model.song_le/imitpp5"
+learner_seqs_path = "resource/generation/learner_seq.txt"
+
 
 # Generate synthetic dataset for expert sequences
 intensity = IntensityHawkesPlusPoly(mu=1, alpha=0.3, beta=1,
@@ -38,12 +41,12 @@ with tf.Session() as sess:
     ppg.train3(sess, expert_time_pool=ee, outer_iters=training_iters)
     # Save well-trained model
     tf_saver = tf.train.Saver()
-    tf_saver.save(sess, "resource/model.song_le/imitpp5")
+    tf_saver.save(sess, model_path)
 
 with tf.Session() as sess:
     # Recover well-trained model
     tf_saver = tf.train.Saver()
-    tf_saver.restore(sess, "resource/model.song_le/imitpp5")
+    tf_saver.restore(sess, model_path)
     # Generate learner sequences
     learner_seqs = np.zeros((0, seq_len))
     iters = 100 # number of generated sequences
@@ -52,4 +55,4 @@ with tf.Session() as sess:
         output_seqs, cum_output_seqs = sess.run(ppg.generate3(rand_uniform_pool))
         learner_seqs = np.concatenate((learner_seqs, cum_output_seqs), axis=0)
     # Save generated learner sequences
-    np.savetxt("resource/generation/learner_seq.txt", learner_seqs, delimiter=',')
+    np.savetxt(learner_seqs_path, learner_seqs, delimiter=',')

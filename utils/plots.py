@@ -108,6 +108,7 @@ def intensityplot4seqs(learner_seqs, expert_seqs, T, n_t=100, t0=0,
     len_expert_seqs  = len(expert_seqs) # nonhomogeneous length
     len_learner_seqs = len(learner_seqs)
     expert_seqs  = [item for sublist in expert_seqs for item in sublist]
+    # learner_seqs = [item for sublist in learner_seqs for item in sublist]
     learner_seqs = np.array(learner_seqs).flatten()
     # Calculate intensity for expert and learner sequences
     expert_Y, expert_x   = get_intensity(expert_seqs, n_seqs=len_expert_seqs,
