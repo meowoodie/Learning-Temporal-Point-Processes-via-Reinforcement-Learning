@@ -4,6 +4,10 @@
 """
 Kernel script for Imitation Learning for Point Process, mainly including class
 PointProcessGenerator
+
+[tensorflow==1.3.0]
+tensorflow higher than 1.3.0 does not support get gradiant for loop structure of
+RNN unit.
 """
 
 import sys
@@ -12,13 +16,12 @@ import random
 import numpy as np
 import tensorflow as tf
 
-# from utils.plots import qqplot
+from utils.plots import *
 
 class PointProcessGenerator(object):
 	"""
 	Point Process Generator is a highly customized RNN model for generating
 	point process actions by imitating input expert actions.
-
 	Param:
 	- t_max:        maximum time of expert actions
 	- seq_len:      length of sequence (with zero padding) of actions
@@ -43,11 +46,12 @@ class PointProcessGenerator(object):
 		self.display_step = display_step
 
 		# create a BasicRNNCell
-		self.rnn_cell = tf.contrib.rnn.BasicRNNCell(state_size)
+		self.rnn_cell = tf.contrib.rnn.LSTMCell(state_size)
+		# tf.contrib.rnn.BasicRNNCell(state_size)
 
 		# input_data has shape [batch_size, sequence_len, feature_size]
 		self.input_data = tf.placeholder(tf.float32, shape=[batch_size, seq_len, feature_size])
-		self.t_max      = tf.constant(t_max, dtype=tf.float32)
+		self.t_max      = t_max # tf.constant(t_max, dtype=tf.float32)
 
 		# Optimizer Computational Graph
 		# expert actions and corresponding learner actions
@@ -93,7 +97,6 @@ class PointProcessGenerator(object):
 		kernel_bandwidth = self._median_pairwise_distance(unfolded_expert_times, unfolded_learner_times)
 
 		norm2_kernel = tf.exp(-tf.square(basis_times - tf.transpose(basis_times)) / 0.5) # kernel_bandwidth)
-		# norm2_kernel = tf.subtract(norm2_kernel, tf.diag(tf.diag_part(norm2_kernel)))
 		norm2 = tf.matmul(basis_times_mask,
 		                  tf.matmul(norm2_kernel, tf.transpose(basis_times_mask))) / \
 		        (self.batch_size * self.batch_size)
@@ -167,7 +170,6 @@ class PointProcessGenerator(object):
 		"""
 		Calculate median value of pairwise distance between two arbitrary points
 		in a sequence of points.
-
 		Reference for calculating median value of a sequence:
 		https://stackoverflow.com/questions/37009647/compute-pairwise-distance-in-a-batch-without-replicating-tensor-in-tensorflow
 		"""
@@ -223,16 +225,14 @@ class PointProcessGenerator(object):
 			# Run optimization
 			sess.run(self.optimizer, feed_dict={self.input_data: batch_input_data})
 			if step % self.display_step == 0:
-				# Plots
-				# imit_times = sess.run(self.expert_times, feed_dict={self.input_data: batch_input_data})
-				# qqplot(imit_times, output_path=("resource/img/qqplot/test"+str(step)))
 				# Calculate batch loss and accuracy
 				train_loss = sess.run(self.loss, feed_dict={self.input_data: batch_input_data})
 				print >> sys.stderr, "[%s] Iter: %d" % (arrow.now(), (step * self.batch_size))
 				print >> sys.stderr, "[%s] Train Loss: %.5f" % (arrow.now(), train_loss)
-				if test_data is not None:
-					test_loss  = sess.run(self.loss, feed_dict={self.input_data: test_data})
-					print >> sys.stderr, "[%s] Test Loss: %.5f" % (arrow.now(), test_loss)
+				# Plot intensity
+				imit_times = sess.run(self.learner_times)
+				intensityplot4seqs(imit_times, batch_input_data[:, :, 0], T=self.t_max, n_t=15.,
+				                   file_path="resource/img/intensity/iter_%d.png" % step)
 			step += 1
 		print >> sys.stderr, "[%s] Optimization Finished!" % arrow.now()
 
@@ -241,7 +241,6 @@ class PointProcessGenerator(object):
 	def _next_batch(self, input_data, start_index):
 		"""
 		Next Batch
-
 		This is a private method for fetching a batch of data from the integral input data.
 		Each time you call this method, it would return the next batch in the dataset by indicating
 		the start index. Which means you have to keep the return start index of every invoking,

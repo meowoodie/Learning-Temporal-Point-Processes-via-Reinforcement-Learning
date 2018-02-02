@@ -22,7 +22,7 @@ def get_intensity(seq, n_seqs, n_t=100, t0=0, T=None):
     T       = seq.max() if T is None else T
     delta_t = float(T - t0) / float(n_t)
 
-    cdf = [ len(filter(lambda t: t < cdf_t, seq))
+    cdf = [ len(filter(lambda t: 0 < t and t < cdf_t, seq))
             for cdf_t in np.arange(t0, T+delta_t, delta_t) ]
     pdf = [ float(cur_cdf - prv_cdf) / float(n_seqs)
             for prv_cdf, cur_cdf in zip(cdf[:-1], cdf[1:]) ]
@@ -107,7 +107,7 @@ def intensityplot4seqs(learner_seqs, expert_seqs, T, n_t=100, t0=0,
     # Flatten seqs
     len_expert_seqs  = len(expert_seqs) # nonhomogeneous length
     len_learner_seqs = len(learner_seqs)
-    expert_seqs  = [item for sublist in expert_seqs for item in sublist]
+    expert_seqs  = np.array(expert_seqs).flatten() # [item for sublist in expert_seqs for item in sublist]
     # learner_seqs = [item for sublist in learner_seqs for item in sublist]
     learner_seqs = np.array(learner_seqs).flatten()
     # Calculate intensity for expert and learner sequences
