@@ -50,8 +50,8 @@ class PointProcessGenerator(object):
 		self.b_r = tf.get_variable("b_r", [self.feature_size], initializer=tf.constant_initializer(0.0))
 
 		# create a BasicRNNCell
-		# self.rnn_cell = tf.contrib.rnn.LSTMCell(state_size)
-		self.rnn_cell = tf.contrib.rnn.BasicRNNCell(state_size)
+		self.rnn_cell = tf.contrib.rnn.LSTMCell(state_size)
+		# self.rnn_cell = tf.contrib.rnn.BasicRNNCell(state_size)
 
 		# input_data has shape [batch_size, sequence_len, feature_size]
 		self.input_data = tf.placeholder(tf.float32, shape=[batch_size, seq_len, feature_size])
@@ -72,11 +72,12 @@ class PointProcessGenerator(object):
 		# loss function
 		self.loss = self._reward_loss(expert_actions, learner_actions, loglik)
 		# optimizer
+		# learning_rate  = tf.train.exponential_decay(lr, 50, 0.96, staircase=True)
 		self.optimizer = tf.train.AdamOptimizer(learning_rate=lr, beta1=0.5, beta2=0.9)\
 		                   .minimize(self.loss)
 		# self.optimizer = tf.train.GradientDescentOptimizer(learning_rate=lr)\
 		#                    .minimize(self.loss)
-        #
+
 		# # Generator Computational Graph
 		# self.expert_times  = expert_actions[:, :, 0]
 		self.learner_times = tf.multiply(tf.cast(learner_actions[:, :, 0] < self.t_max, tf.float32), learner_actions[:, :, 0])
@@ -104,11 +105,9 @@ class PointProcessGenerator(object):
 		# Calculate the kernel bandwidth, which is the median value of expert_time and learner_time
 		# kernel_bandwidth = self._median_pairwise_distance(unfolded_expert_times, unfolded_learner_times)
 
+		# knock out all self interaction terms to get rid of the bias
 		norm2_kernel = tf.exp(-tf.square(basis_times - tf.transpose(basis_times)) / 0.5) # kernel_bandwidth)
-		# norm2 = tf.matmul(basis_times_mask,
-		#                   tf.matmul(norm2_kernel, tf.transpose(basis_times_mask))) / \
-		#         (self.batch_size * self.batch_size)
-		# mmd   = tf.sqrt(norm2)
+		norm2_kernel = tf.multiply(norm2_kernel, self._kronecker_product())
 
 		# upper-right and lower-left block, contain one copy of the policy we are optimizing.
 		block_size = self.batch_size * self.seq_len
@@ -125,7 +124,7 @@ class PointProcessGenerator(object):
 				norm2_kernel[block_size:, block_size:],
 				tf.transpose(tf.transpose(learner_times_mask) * loglik)))
 
-		return reward
+		return reward / (self.batch_size * self.batch_size)
 
 	def _loglik_interval(self, learner_times, states, sigmas):
 		"""
@@ -197,12 +196,36 @@ class PointProcessGenerator(object):
 		# Reyleigh distribution with parameter sigma.
 		# W = tf.get_variable("W_r", [self.state_size, self.feature_size])
 		# b = tf.get_variable("b_r", [self.feature_size], initializer=tf.constant_initializer(0.0))
-		cur_sigma    = tf.exp(tf.matmul(cur_state, self.W_r) + self.b_r)
+		cur_sigma    = tf.exp(tf.matmul(cur_state.h, self.W_r) + self.b_r)
 		stoch_action = -1 * tf.log(tf.random_uniform(tf.shape(cur_sigma), minval=0, maxval=1)) / cur_sigma
 		cur_action   = tf.add(prv_action, stoch_action)
 		# action has shape [num_seq, feature_size]
 		# state has shape  [num_seq, state_size]
 		return cur_action, cur_state, cur_sigma
+
+	def _kronecker_product(self):
+		"""
+		Compute Kronecker Product
+
+		Since tensorflow == 1.3.0 does not support tf.contrib.kfac.utils.kronecker_product
+		This function manully calculate kronecker product by indicating batch_size
+		and seq_len
+		"""
+		# Full matrix
+		full = tf.zeros((0, 2 * self.batch_size * self.seq_len))
+		# Indicating matrix for locating the zeros sub matrix
+		locs = np.eye(2 * self.batch_size)
+		# Constructing full matrix with zeros and ones matrix pads
+		for i in range(2 * self.batch_size):
+		    row = tf.zeros((self.seq_len, 0))
+		    for j in range(2 * self.batch_size):
+		        if locs[i, j] == 1.:
+		            pad = tf.zeros([self.seq_len, self.seq_len])
+		        else:
+		            pad = tf.ones([self.seq_len, self.seq_len])
+		        row = tf.concat([row, pad], axis=1)
+		    full = tf.concat([full, row], axis=0)
+		return full
 
 	def _median_pairwise_distance(self, seqAs, seqBs):
 		"""
@@ -292,18 +315,18 @@ class PointProcessGenerator(object):
 
 	# Utils Function
 
-	def unittest(self, sess):
-		init = tf.global_variables_initializer()
-		sess.run(init)
-
-		test_output = sess.run(self.loss, feed_dict={self.input_data: [
-			[[0.1], [0.5], [1.], [1.5], [1.7], [2]],
-			[[0.1], [0.5], [1.], [1.5], [1.7], [2]],
-			[[0.1], [0.5], [1.], [1.5], [1.7], [2]],
-			[[0.1], [0.5], [1.], [1.5], [1.7], [2]],
-			[[0.1], [0.5], [1.], [1.5], [1.7], [2]]
-		]})
-		print test_output
+	# def unittest(self, sess):
+	# 	init = tf.global_variables_initializer()
+	# 	sess.run(init)
+    #
+	# 	test_output = sess.run(self.loss, feed_dict={self.input_data: [
+	# 		[[0.1], [0.5], [1.], [1.5], [1.7], [2]],
+	# 		[[0.1], [0.5], [1.], [1.5], [1.7], [2]],
+	# 		[[0.1], [0.5], [1.], [1.5], [1.7], [2]],
+	# 		[[0.1], [0.5], [1.], [1.5], [1.7], [2]],
+	# 		[[0.1], [0.5], [1.], [1.5], [1.7], [2]]
+	# 	]})
+	# 	print test_output
 
 	def _next_batch(self, input_data, start_index):
 		"""
