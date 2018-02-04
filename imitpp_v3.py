@@ -37,7 +37,7 @@ class PointProcessGenerator(object):
 	             state_size=3, batch_size=2, feature_size=1,
 				 iters=10, display_step=1, lr=1e-4):
 
-		tf.set_random_seed(100)
+		# tf.set_random_seed(100)
 		self.seq_len      = seq_len
 		self.batch_size   = batch_size
 		self.feature_size = feature_size
@@ -72,18 +72,17 @@ class PointProcessGenerator(object):
 		# loss function
 		self.loss = self._reward_loss(expert_actions, learner_actions, loglik)
 		# optimizer
-		# learning_rate  = tf.train.exponential_decay(lr, 50, 0.96, staircase=True)
-		self.optimizer = tf.train.AdamOptimizer(learning_rate=lr, beta1=0.5, beta2=0.9)\
+		global_step           = tf.Variable(0, trainable=False)
+		starter_learning_rate = lr
+		learning_rate = tf.train.exponential_decay(starter_learning_rate, global_step,
+												   50, 0.96, staircase=True)
+		self.optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate, beta1=0.9, beta2=0.9)\
 		                   .minimize(self.loss)
 		# self.optimizer = tf.train.GradientDescentOptimizer(learning_rate=lr)\
 		#                    .minimize(self.loss)
 
 		# # Generator Computational Graph
-		# self.expert_times  = expert_actions[:, :, 0]
 		self.learner_times = tf.multiply(tf.cast(learner_actions[:, :, 0] < self.t_max, tf.float32), learner_actions[:, :, 0])
-		# self.learner_times = learner_actions[:, :, 0]
-		# self.states        = states
-		# self.sigmas        = sigmas
 
 	# Building Blocks of Computational Graph
 
@@ -109,16 +108,20 @@ class PointProcessGenerator(object):
 		norm2_kernel = tf.exp(-tf.square(basis_times - tf.transpose(basis_times)) / 0.5) # kernel_bandwidth)
 		norm2_kernel = tf.multiply(norm2_kernel, self._kronecker_product())
 
-		# upper-right and lower-left block, contain one copy of the policy we are optimizing.
 		block_size = self.batch_size * self.seq_len
+		# upper-left block, does not contain the policy we are optimizing.
 		reward = tf.matmul(tf.transpose(expert_times_mask),
+			tf.matmul(
+				norm2_kernel[:block_size, :block_size],
+				expert_times_mask))
+		# upper-right and lower-left block, contain one copy of the policy we are optimizing.
+		reward += 2 * tf.matmul(tf.transpose(expert_times_mask),
 			tf.matmul(
 				norm2_kernel[:block_size, block_size:],
 				tf.transpose(tf.transpose(learner_times_mask) * loglik)))
-
 		# lower-right block, contains two copies of the policy we are optimizing.
 		# hence using the rule of total derivatives, we have 2 copies here.
-		reward += tf.matmul(
+		reward += 2 * tf.matmul(
 			tf.transpose(learner_times_mask),
 			tf.matmul(
 				norm2_kernel[block_size:, block_size:],
@@ -146,9 +149,7 @@ class PointProcessGenerator(object):
 
 		learner_times_mask  = tf.cast(learner_times < self.t_max, dtype=tf.float32)
 		loglik_interval_sum = tf.reduce_sum(tf.multiply(learner_times_mask, loglik_interval), axis=1)
-		# tf.reduce_sum(learner_times_mask, axis=1) - 1
-		# log_survival_max    = tf.reduce_max(tf.multiply(learner_times_mask, log_survival), axis=1)
-		# return [tf.reduce_sum(learner_times_mask, axis=1) - 1]
+
 		return tf.reshape(
 			tf.reshape(loglik_interval_sum, [self.batch_size, 1]) * tf.ones([1,self.seq_len]),
 			[1, self.batch_size * self.seq_len])
@@ -308,7 +309,7 @@ class PointProcessGenerator(object):
 				print >> sys.stderr, "[%s] Train Loss: %.5f" % (arrow.now(), train_loss)
 				# Plot intensity
 				imit_times = sess.run(self.learner_times)
-				intensityplot4seqs(imit_times, batch_input_data[:, :, 0], T=self.t_max, n_t=15.,
+				intensityplot4seqs(imit_times, batch_input_data[:, :, 0], T=self.t_max, n_t=10.,
 				                   file_path="resource/img/intensity/iter_%d.png" % step)
 			step += 1
 		print >> sys.stderr, "[%s] Optimization Finished!" % arrow.now()
@@ -352,24 +353,24 @@ class PointProcessGenerator(object):
 		start_index += self.batch_size
 		return batch_input_data, start_index
 
-if __name__ == "__main__":
-	# Configuration parameters
-	seq_len      = 6
-	batch_size   = 5
-	state_size   = 3
-	feature_size = 1  # Please fix feature_size to 1, since ppg only supports 1D feature for the time being
-	t_max        = 3.
-	data_size    = 6000
-	generate_iters = 50
-	training_iters = 20000
-
-	ppg = PointProcessGenerator(
-		t_max=t_max,
-		seq_len=seq_len,
-		batch_size=batch_size,
-		state_size=state_size,
-		feature_size=feature_size,
-		iters=training_iters, display_step=10, lr=1e-5)
-
-	with tf.Session() as sess:
-		ppg.unittest(sess)
+# if __name__ == "__main__":
+# 	# Configuration parameters
+# 	seq_len      = 6
+# 	batch_size   = 5
+# 	state_size   = 3
+# 	feature_size = 1  # Please fix feature_size to 1, since ppg only supports 1D feature for the time being
+# 	t_max        = 3.
+# 	data_size    = 6000
+# 	generate_iters = 50
+# 	training_iters = 20000
+#
+# 	ppg = PointProcessGenerator(
+# 		t_max=t_max,
+# 		seq_len=seq_len,
+# 		batch_size=batch_size,
+# 		state_size=state_size,
+# 		feature_size=feature_size,
+# 		iters=training_iters, display_step=10, lr=1e-5)
+#
+# 	with tf.Session() as sess:
+# 		ppg.unittest(sess)

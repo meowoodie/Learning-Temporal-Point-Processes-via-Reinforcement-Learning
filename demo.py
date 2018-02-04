@@ -19,25 +19,25 @@ if __name__ == "__main__":
 	# np.random.seed(100)
 
 	# Configuration parameters
-	seq_len      = 30
-	batch_size   = 64
-	state_size   = 64
+	# seq_len      = 30
+	batch_size   = 32
+	state_size   = 32
 	feature_size = 1  # Please fix feature_size to 1, since ppg only supports 1D feature for the time being
-	t_max        = 10.
+	t_max        = 15.
 	data_size    = 2000
 	generate_iters = 50
-	training_iters = 20000
+	training_iters = 10000
 
 	# Generate point process with complex intensity
-	# intensity = IntensityHawkesPlusGaussianMixture(mu=1, alpha=0.3, beta=1,
-    #                                                k=2, centers=[t_max/4., t_max*3./4.],
-	# 											   stds=[1, 1], coefs=[1, 1])
-	intensity = IntensityHomogenuosPoisson(lam=1.)
+	intensity = IntensityHawkesPlusGaussianMixture(mu=1, alpha=0.3, beta=1,
+                                                   k=2, centers=[t_max/4., t_max*3./4.],
+												   stds=[1, 1], coefs=[1, 1])
+	# intensity = IntensityHomogenuosPoisson(lam=1.)
 	ppsample  = generate_sample(intensity, T=t_max, n=data_size)
-	max_len   = max([ len(ppseq) for ppseq in ppsample ])
+	seq_len   = max([ len(ppseq) for ppseq in ppsample ])
 	# Check if max length of the poisson process sequences is less than the preset sequence length
-	if seq_len < max_len:
-		raise Exception("Insecure seq_len %d < max_len %d." % (seq_len, max_len))
+	# if seq_len < max_len:
+	# 	raise Exception("Insecure seq_len %d < max_len %d." % (seq_len, max_len))
 	# Padding zeros for poisson process sequences
 	expert_actions = np.zeros((data_size, seq_len, feature_size))
 	for data_ind in range(data_size):
@@ -53,7 +53,7 @@ if __name__ == "__main__":
 			batch_size=batch_size,
 			state_size=state_size,
 			feature_size=feature_size,
-			iters=training_iters, display_step=10, lr=1e-5)
+			iters=training_iters, display_step=10, lr=1e-4)
 
 		# # Loading well-trained model
 		# file_name = "seql60.bts128.sts64.fts1.tmx15.dts6000"
