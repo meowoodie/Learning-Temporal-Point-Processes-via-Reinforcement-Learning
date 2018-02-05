@@ -422,13 +422,13 @@ class PointProcessGenerator6(object):
 						axis=1
 					)
 
-					print("there")
-
 					train_point_flat = expert_time_pool[batch_index,:].flatten()
 
 					intensityplot4seqs(test_point_mat, expert_time_pool[batch_index,:],
 					                   T=self.T_max, n_t=20, t0=0,
 					                   file_path="resource/img/intensity/iter_%d.png" % step)
+					if step >= 300:
+						np.savetxt("data/iter_%d_learner_seqs.txt" % step, test_point_mat, delimiter=',')
 					# idx = (train_point_flat < self.T_max)
 					# res, res2 = stats.probplot(
 					# 	train_point_diff.flatten()[idx],
