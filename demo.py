@@ -13,7 +13,7 @@ import tensorflow as tf
 
 from utils.ppgen import IntensityHawkesPlusGaussianMixture, IntensityHomogenuosPoisson, generate_sample
 from utils.plots import intensityplot4seqs
-from imitpp_v3 import PointProcessGenerator
+from imitpp_v1 import PointProcessGenerator
 
 if __name__ == "__main__":
 	# np.random.seed(100)
@@ -59,7 +59,8 @@ if __name__ == "__main__":
 		# file_name = "seql60.bts128.sts64.fts1.tmx15.dts6000"
 		# tf_saver = tf.train.Saver()
 		# tf_saver.restore(sess, "resource/model/%s" % file_name)
-        #
+
+		# # Generating sequences
 		# learner_actions = np.zeros((0, seq_len))
 		# for ind in range(generate_iters):
 		# 	seqs, _ = ppg.generate(sess, pretrained=True)
@@ -70,6 +71,6 @@ if __name__ == "__main__":
 
 		# Training new model
 		ppg.train(sess, expert_actions)
-		# tf_saver = tf.train.Saver()
-		# tf_saver.save(sess, "resource/model/seql%d.bts%d.sts%d.fts%d.tmx%d.dts%d" % \
-		#                     (seq_len, batch_size, state_size, feature_size, t_max, data_size))
+		tf_saver = tf.train.Saver()
+		tf_saver.save(sess, "resource/model/seql%d.bts%d.sts%d.fts%d.tmx%d.dts%d" % \
+		                    (seq_len, batch_size, state_size, feature_size, t_max, data_size))
