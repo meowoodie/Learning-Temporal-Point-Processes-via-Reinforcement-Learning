@@ -1,5 +1,8 @@
 .DS_Store
+.gitignore
 archive/*
 prepare_data/*
 resource/*
+data/*
+results/*
 *.pyc
