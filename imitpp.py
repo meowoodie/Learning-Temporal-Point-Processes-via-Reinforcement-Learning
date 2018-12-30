@@ -28,16 +28,17 @@ class CustomizedStochasticLSTM(object):
     Customized Stochastic LSTM Network
     """
 
-    def __init__(self, batch_size, step_size, lstm_hidden_size, loc_hidden_size, m_dim=None):
+    def __init__(self, batch_size, step_size, lstm_hidden_size, loc_hidden_size, mak_hidden_size, m_dim):
         # data dimension
         self.t_dim = 1     # by default
-        self.m_dim = m_dim
+        self.m_dim = m_dim # number of categories for the marks
 
         # model hyper-parameters
-        self.step_size        = step_size
-        self.lstm_hidden_size = lstm_hidden_size
-        self.loc_hidden_size  = loc_hidden_size
-        self.loc_param_size   = 5 # by default
+        self.step_size        = step_size        # step size of LSTM
+        self.lstm_hidden_size = lstm_hidden_size # size of LSTM hidden feature
+        self.loc_hidden_size  = loc_hidden_size  # size of location hidden feature
+        self.loc_param_size   = 5                # by default
+        self.mak_hidden_size  = mak_hidden_size  # size of mark hidden feature
 
         # define learning weights
         # - time weights
@@ -48,6 +49,11 @@ class CustomizedStochasticLSTM(object):
         self.bl0 = tf.Variable(tf.random_normal([self.loc_hidden_size]))
         self.Wl1 = tf.Variable(tf.random_normal([self.loc_hidden_size, self.loc_param_size]))
         self.bl1 = tf.Variable(tf.random_normal([self.loc_param_size]))
+        # - mark weights
+        self.Wm0 = tf.Variable(tf.random_normal([self.lstm_hidden_size, self.mak_hidden_size]))
+        self.bm0 = tf.Variable(tf.random_normal([self.mak_hidden_size]))
+        self.Wm1 = tf.Variable(tf.random_normal([self.mak_hidden_size, self.m_dim]))
+        self.bm1 = tf.Variable(tf.random_normal([self.m_dim]))
 
         # create a basic LSTM cell
         tf_lstm_cell    = tf.nn.rnn_cell.BasicLSTMCell(self.lstm_hidden_size)
@@ -55,35 +61,35 @@ class CustomizedStochasticLSTM(object):
         # - lstm_state.h: hidden state [batch_size, lstm_hidden_size]
         # - lstm_state.c: cell state   [batch_size, lstm_hidden_size]
         init_lstm_state = tf_lstm_cell.zero_state(batch_size, dtype=tf.float32)
-        # defining initial data point
-        # - init_t: initial time     [batch_size, t_dim] 
-        # - init_l: initial location [batch_size, 2]  
-        init_t = tf.zeros([batch_size, self.t_dim], dtype=tf.float32)
-        init_l = tf.random_uniform([batch_size, 2], dtype=tf.float32)\
         # construct customized LSTM network
-        self.test = self.recurrent_structure(batch_size, tf_lstm_cell, init_t, init_l, init_lstm_state)
+        self.test, _, _, _ = self.recurrent_structure(batch_size, tf_lstm_cell, init_lstm_state)
 
-    def recurrent_structure(self, batch_size, 
+    def recurrent_structure(self, 
+            batch_size, 
             tf_lstm_cell,     # tensorflow LSTM cell object, e.g. 'tf.nn.rnn_cell.BasicLSTMCell'
-            init_t,           # initial time     [batch_size, t_dim]
-            init_l,           # initial location [batch_size, 2]
             init_lstm_state): # initial LSTM state tensor
         """Recurrent structure with customized LSTM cells."""
+        # defining initial data point
+        # - init_t: initial time     [batch_size, t_dim] 
+        init_t = tf.zeros([batch_size, self.t_dim], dtype=tf.float32)
         # concatenate each customized LSTM cell by loop
-        seq_t = []                                        # generated sequence initialization
+        seq_t = [] # generated sequence initialization
         seq_l = []
-        last_t, last_l, last_lstm_state = init_t, init_l, init_lstm_state # loop initialization
+        seq_m = []
+        last_t, last_lstm_state = init_t, init_lstm_state # loop initialization
         for _ in range(self.step_size):
-            t, l, state = self._customized_lstm_cell(batch_size, tf_lstm_cell, last_lstm_state, last_t, last_l)
+            t, l, m, state = self._customized_lstm_cell(batch_size, tf_lstm_cell, last_lstm_state, last_t)
             seq_t.append(t)         # record generated time 
             seq_l.append(l)         # record generated location
+            seq_m.append(m)         # record generated mark 
             last_t          = t     # reset last_t
             last_lstm_state = state # reset last_lstm_state
         seq_t = tf.stack(seq_t, axis=1)
         seq_l = tf.stack(seq_l, axis=1) 
-        return seq_l
+        seq_m = tf.stack(seq_m, axis=1)
+        return seq_t, seq_l, seq_m, state
 
-    def _customized_lstm_cell(self, batch_size, tf_lstm_cell, last_state, t, l, m=None):
+    def _customized_lstm_cell(self, batch_size, tf_lstm_cell, last_state, t):
         """
         Customized Stochastic LSTM Cell
 
@@ -96,14 +102,14 @@ class CustomizedStochasticLSTM(object):
         """
         # stochastic neurons for generating time, location and mark
         next_t = t + self._delta_t(batch_size, last_state.h) # [batch_size, t_dim]
-        next_l = l + self._delta_l(batch_size, last_state.h) # [batch_size, 2] 
-        # next_m = m + self._delta_m(batch_size, last_state.h)
-        x = tf.concat([next_t, next_l], axis=1)
+        next_l = self._l(batch_size, last_state.h) # [batch_size, 2] 
+        next_m = self._m(batch_size, last_state.h) # [batch_size, m_dim] 
+        x      = tf.concat([next_t, next_l], axis=1) # TODO: Add mark to input x
         # one step rnn structure
         # - x is a tensor that contains a single step of data points with shape [batch_size, t_dim + l_dim + m_dim]
         # - state is a tensor of hidden state with shape [2, batch_size, state_size]
         _, next_state = tf.nn.static_rnn(tf_lstm_cell, [x], initial_state=last_state, dtype=tf.float32)
-        return next_t, next_l, next_state
+        return next_t, next_l, next_m, next_state
 
     def _delta_t(self, batch_size, hidden_state):
         """Sampling time interval given hidden state of LSTM"""
@@ -112,7 +118,7 @@ class CustomizedStochasticLSTM(object):
         delta_t = - tf.log(tf.random_uniform([batch_size, self.t_dim], dtype=tf.float32)) / theta_h
         return delta_t
 
-    def _delta_l(self, batch_size, hidden_state):
+    def _l(self, batch_size, hidden_state):
         """Sampling location shifts given hidden state of LSTM"""
         dense_feature = tf.nn.relu(tf.matmul(hidden_state, self.Wl0)) + self.bl0  # [batch_size, loc_hidden_size]
         dense_feature = tf.matmul(dense_feature, self.Wl1) + self.bl1             # [batch_size, loc_param_size]
@@ -128,7 +134,7 @@ class CustomizedStochasticLSTM(object):
         # location x and y
         x = mu0 + tf.multiply(sigma11, rv0) + tf.multiply(sigma12, rv1)
         y = mu1 + tf.multiply(sigma12, rv0) + tf.multiply(sigma22, rv1)
-        delta_l = tf.concat([x, y], axis=1)  # [batch_size, 2]
+        l = tf.concat([x, y], axis=1)  # [batch_size, 2]
         # FOR LOGLIKELIHOOD
         # sigma1 = tf.sqrt(tf.square(sigma11) + tf.square(sigma12))
         # sigma2 = tf.sqrt(tf.square(sigma12) + tf.square(sigma22))
@@ -140,10 +146,21 @@ class CustomizedStochasticLSTM(object):
         #     + tf.square(output_location_y - mu1) / tf.square(sigma2)
         # loglik = -z / 2 / (1 - tf.square(rho)) - tf.log(
         #     2 * pi * tf.multiply(tf.multiply(sigma1, sigma2), tf.sqrt(1 - tf.square(rho))))
-        return delta_l
+        return l
     
-    def _delta_m(self, batch_size, hidden_state):
-        return None
+    def _m(self, batch_size, hidden_state):
+        """Sampling mark given hidden state of LSTM"""
+        dense_feature = tf.nn.relu(tf.matmul(hidden_state, self.Wm0)) + self.bm0      # [batch_size, location_para_dim]
+        dense_feature = tf.nn.elu(tf.matmul(dense_feature, self.Wm1) + self.bm1) + 1  # [batch_size, dim_m] dense_feature is positive
+        # note that compressed_feature is not normalized yet
+        # sample from multinomial distribution
+        # (use Gumbel trick to sample the labels)
+        eps        = 1e-13
+        rv_uniform = tf.random_uniform([batch_size, self.m_dim])
+        rv_Gumbel  = -tf.log(-tf.log(rv_uniform + eps) + eps)
+        label      = tf.argmax(dense_feature + rv_Gumbel, axis=1) # label: [batch]
+        m          = tf.one_hot(indices=label, depth=self.m_dim)
+        return m
 
     def debug(self, sess):
         return sess.run(self.test)
@@ -154,13 +171,15 @@ if __name__ == "__main__":
     # Start training
     with tf.Session() as sess:
 
-        step_size        = 10
+        step_size        = 7
         lstm_hidden_size = 5
         loc_hidden_size  = 10
-        batch_size       = 8
+        mak_hidden_size  = 10
+        m_dim            = 3
+        batch_size       = 6
 
         # initialize customized LSTM
-        clstm = CustomizedStochasticLSTM(batch_size, step_size, lstm_hidden_size, loc_hidden_size)
+        clstm = CustomizedStochasticLSTM(batch_size, step_size, lstm_hidden_size, loc_hidden_size, mak_hidden_size, m_dim)
 
         # Initialize the variables (i.e. assign their default value)
         init = tf.global_variables_initializer()
