@@ -28,7 +28,6 @@ class CustomizedStochasticLSTM(object):
     Customized Stochastic LSTM Network
 
     A LSTM Network with customized stochastic output neurons, which used to generate time, location and marks accordingly.
-
     """
 
     def __init__(self, step_size, lstm_hidden_size, loc_hidden_size, mak_hidden_size, m_dim):
@@ -76,8 +75,8 @@ class CustomizedStochasticLSTM(object):
         init_lstm_state = tf_lstm_cell.zero_state(batch_size, dtype=tf.float32)
         # construct customized LSTM network
         self.seq_t, self.seq_l, self.seq_m, self.final_state = self.recurrent_structure(batch_size, tf_lstm_cell, init_lstm_state)
-        # TODO: Debug
-        self.test = self.seq_l
+        # # TODO: Debug
+        # self.test = self.seq_m
 
     def recurrent_structure(self, 
             batch_size, 
@@ -178,191 +177,181 @@ class CustomizedStochasticLSTM(object):
         m          = tf.one_hot(indices=label, depth=self.m_dim)
         return m # [batch_size, m_dim]
 
-    def debug(self, sess):
-        return sess.run(self.test)
+    # def debug(self, sess):
+    #     return sess.run(self.test)
       
+
+
+class PointProcessGenerator(object):
+    """
+    Point Process Generator
+    """
+
+    def __init__(self, T, seq_len, lstm_hidden_size, loc_hidden_size, mak_hidden_size, m_dim, kernel_bandwidth=1):
+        """
+        Params:
+        """
+        # model hyper-parameters
+        self.T       = T                # maximum time
+        self.t_dim   = 1                # by default
+        self.l_dim   = 2                # by default
+        self.m_dim   = m_dim            # number of categories of marks
+        self.kb      = kernel_bandwidth # kernel bandwidth for kernel densitiy estimation
+        self.seq_len = seq_len          # length of each generated sequences
+        # LSTM generator
+        self.cslstm  = CustomizedStochasticLSTM(
+            step_size=seq_len, lstm_hidden_size=lstm_hidden_size, 
+            loc_hidden_size=loc_hidden_size, mak_hidden_size=mak_hidden_size, m_dim=m_dim)
+    
+    def initialize_policy_network(self, batch_size):
+        """
+        Construct Policy Network
+        
+        Policy should be flexible and expressive enough to capture the potential complex point process patterns of data.
+        Therefore, a customized recurrent neural network (RNN) with stochastic neurons is adopted, where hidden state is 
+        computed by hidden state of last moment and stochastically generated action. i.e.
+          a_{i+1} is sampling from pi(a|h_{i})
+          h_{i+1} = rnn_cell(h_{i}, a_{i+1})
+        """
+        # input tensors: expert sequences (time, location, marks)
+        self.input_seq_t = tf.placeholder(tf.float32, [batch_size, None, self.t_dim])
+        self.input_seq_l = tf.placeholder(tf.float32, [batch_size, None, self.l_dim])
+        self.input_seq_m = tf.placeholder(tf.float32, [batch_size, None, self.m_dim])
+
+        # construct customized stochastic LSTM network
+        self.cslstm.initialize_network(batch_size)
+        # generated tensors: learner sequences (time, location, marks)
+        learner_seq_t, learner_seq_l, learner_seq_m = self.cslstm.seq_t, self.cslstm.seq_l, self.cslstm.seq_m
+        
+        # sequences preprocessing
+        # - truncate sequences after time T
+        expert_seq_t,  expert_seq_l,  expert_seq_m  = self.__truncate_by_T(
+            self.input_seq_t, self.input_seq_l, self.input_seq_m, self.T)
+        learner_seq_t, learner_seq_l, learner_seq_m = self.__truncate_by_T(
+            learner_seq_t, learner_seq_l, learner_seq_m, self.T)
+        # - concatenate batches in the sequences
+        expert_seq_t,  expert_seq_l,  expert_seq_m  = \
+            self.__concatenate_batch(expert_seq_t), \
+            self.__concatenate_batch(expert_seq_l), \
+            self.__concatenate_batch(expert_seq_m)
+        learner_seq_t, learner_seq_l, learner_seq_m = \
+            self.__concatenate_batch(learner_seq_t), \
+            self.__concatenate_batch(learner_seq_l), \
+            self.__concatenate_batch(learner_seq_m)
+        
+        self._reward(expert_seq_t,  expert_seq_l,  expert_seq_m, \
+                     learner_seq_t, learner_seq_l, learner_seq_m)
+        
+        self.test = self.__concatenate_batch(expert_seq_t)
+
+    def _reward(self, 
+        expert_seq_t, expert_seq_l, expert_seq_m,     # expert sequences
+        learner_seq_t, learner_seq_l, learner_seq_m): # learner sequences
+        """reward"""
+        pass
+
+    @staticmethod
+    def __truncate_by_T(seq_t, seq_l, seq_m, T):
+        """masking time, location and mark sequences for the entries before the maximum time T."""
+        l_dim   = tf.shape(seq_l)[-1]
+        m_dim   = tf.shape(seq_m)[-1]
+        # squeeze since each time entry is a list with a single element. 
+        array_t = tf.squeeze(seq_t, squeeze_dims=[2]) # [batch_size, seq_len]
+        # get basic mask where 0 if t > T else 1
+        mask    = tf.cast(array_t < T, tf.float32)    # [batch_size, seq_len] 
+        mask_t  = tf.expand_dims(mask, -1)            # [batch_size, seq_len, 1]
+        mask_l  = tf.tile(mask_t, [1, 1, l_dim])      # [batch_size, seq_len, l_dim]
+        mask_m  = tf.tile(mask_t, [1, 1, m_dim])      # [batch_size, seq_len, m_dim]
+        # return masked sequences
+        return tf.multiply(seq_t, mask_t), \
+               tf.multiply(seq_l, mask_l), \
+               tf.multiply(seq_m, mask_m)
+    
+    @staticmethod
+    def __concatenate_batch(seqs):
+        """concatenate each batch of the sequences into a single sequence."""
+        array_seq = tf.unstack(seqs, axis=0)     # [batch_size, seq_len, data_dim]
+        seq       = tf.concat(array_seq, axis=0) # [batch_size*seq_len, data_dim]
+        return seq
+
+    def debug(self, sess, input_seq_t, input_seq_l, input_seq_m):
+        return sess.run(self.test, feed_dict={
+            self.input_seq_t: input_seq_t,
+            self.input_seq_l: input_seq_l,
+            self.input_seq_m: input_seq_m})
+
 if __name__ == "__main__":
+    expert_seq_t = [
+        [[ 2.2372603], 
+        [ 7.3469152],
+        [10.841639 ],
+        [11.278158 ],
+        [11.875915 ]],
+
+        [[ 4.601893 ],
+        [ 7.6262646],
+        [ 8.953828 ],
+        [11.48958  ],
+        [13.335195 ]]]
+
+    expert_seq_l = [
+        [[-9.7975151e+01,  2.7360342e+00],
+        [-5.2876039e+00, -6.6114247e-01],
+        [-7.1111503e+00, -8.5162185e-03],
+        [ 1.1980354e+01,  1.2619636e+00],
+        [ 3.5298267e+02,  5.9427624e+00]],
+
+        [[ 2.0113881e+03,  5.1461897e+00],
+        [ 4.9495239e+02,  5.6867313e+00],
+        [-5.8737720e+02,  1.8419909e+00],
+        [-1.5442281e+00, -1.3099791e+00],
+        [ 4.1468458e+00,  8.7737030e-01]]]
+    
+    expert_seq_m = [
+        [[0., 0., 1.],
+        [0., 1., 0.],
+        [0., 1., 0.],
+        [0., 1., 0.],
+        [0., 1., 0.]],
+
+        [[1., 0., 0.],
+        [1., 0., 0.],
+        [1., 0., 0.],
+        [0., 1., 0.],
+        [0., 1., 0.]]]
+
     tf.set_random_seed(1)
     # Start training
     with tf.Session() as sess:
-        step_size        = 7
-        lstm_hidden_size = 5
+        step_size        = 5
+        lstm_hidden_size = 10
         loc_hidden_size  = 10
         mak_hidden_size  = 10
         m_dim            = 3
-        batch_size       = 6
-        # initialize customized LSTM
-        clstm = CustomizedStochasticLSTM(step_size, lstm_hidden_size, loc_hidden_size, mak_hidden_size, m_dim)
-        clstm.initialize_network(batch_size)
+        batch_size       = 2
+        T                = 11.
+
+        ppg = PointProcessGenerator(
+            T=T, seq_len=step_size, 
+            lstm_hidden_size=lstm_hidden_size, loc_hidden_size=loc_hidden_size, mak_hidden_size=mak_hidden_size, 
+            m_dim=m_dim, kernel_bandwidth=1)
+        
+        ppg.initialize_policy_network(batch_size)
+
         # Initialize the variables (i.e. assign their default value)
         init = tf.global_variables_initializer()
-        # Run the initializer
         sess.run(init)
-        print(clstm.debug(sess))
 
-# class PointProcessGenerator(object):
-#     """
-#     Point Process Generator
-#     """
+        print(ppg.debug(sess, expert_seq_t, expert_seq_l, expert_seq_m))
 
-#     def __init__(self, T, seq_len, batch_size=2, state_size=1, kernel_bandwidth=1):
-#         """
 
-#         """
-#         self.T = T
-#         self.kernel_bandwidth = kernel_bandwidth 
+        # # initialize customized LSTM
+        # clstm = CustomizedStochasticLSTM(step_size, lstm_hidden_size, loc_hidden_size, mak_hidden_size, m_dim)
+        # clstm.initialize_network(batch_size)
+        # # Initialize the variables (i.e. assign their default value)
+        # init = tf.global_variables_initializer()
+        # # Run the initializer
+        # sess.run(init)
+        # print(clstm.debug(sess))
 
-#         self.state_size = state_size 
-#         self.seq_len    = seq_len
-#         self.batch_size = batch_size
-
-#         # self.knock_out = 1 - tf.contrib.kfac.utils.kronecker_product(
-#         #     tf.eye(2 * self.batch_size),
-#         #     tf.ones([self.seq_len, self.seq_len]))
     
-#     def construct_policy_network(self, hidden_size, batch_size):
-#         """
-#         Construct Policy Network
-        
-#         Policy should be flexible and expressive enough to capture the potential complex point process patterns of data.
-#         Therefore, a customized recurrent neural network (RNN) with stochastic neurons is adopted, where hidden state is 
-#         computed by hidden state of last moment and stochastically generated action. i.e.
-#           a_{i+1} is sampling from pi(a|h_{i})
-#           h_{i+1} = rnn_cell(h_{i}, a_{i+1})
-#         """
-#         pass
-
-#     def reward(self, 
-#             expert_seq, 
-#             expert_seq_mask, 
-#             learner_seq, 
-#             learner_seq_mask, 
-#             loglik_interval_mask):
-
-#         # first compute mmd2 and then do all the reinforce trick.
-
-#         # first compute the entire kernel matrix in one shot
-
-#         # basis sequence: 
-#         basis_seq = tf.concat([expert_seq, learner_seq], axis=0)
-#         l2_kernel = tf.exp(-tf.square(basis_seq - tf.transpose(basis_seq)) / (self.kernel_bandwidth))
-#         # knock out all self interaction terms to get rid of the bias
-#         l2_kernel = tf.multiply(l2_kernel, self.knock_out)
-
-#         block_size = self.batch_size * self.seq_len
-#         input = tf.ones([self.seq_len, self.seq_len])
-#         # Lower triangular part
-#         reward_togo_mask = tf.contrib.kfac.utils.kronecker_product(
-#             tf.eye(self.batch_size),
-#             tf.matrix_band_part(input, -1, 0)
-#         )
-
-#         result = tf.zeros([1, self.batch_size * self.seq_len])
-
-
-#         # upper-right and lower-left block, contain one copy of the policy we are optimizing.
-#         result -= 2*tf.matmul(
-#             tf.multiply(expert_seq_mask, learner_seq_mask),
-#                 l2_kernel[:block_size, block_size:])
-
-#         # lower-right block, contains two copies of the policy we are optimizing.
-#         # hence using the rule of total derivatives, we have 2 copies here.
-#         result += 2*tf.matmul(
-#             learner_seq_mask, l2_kernel[block_size:, block_size:])
-
-#         # compute reward to go
-#         result = tf.matmul(result, reward_togo_mask)
-#         result = tf.multiply(result,loglik_interval_mask)
-#         result = tf.reduce_sum(result)
-
-#         # upper-left block, does not contain the policy we are optimizing.
-#         # result += tf.matmul(
-#         # expert_time_mask,
-#         # tf.matmul(
-#         # 	norm2_kernel[:block_size, :block_size],
-#         # 	tf.transpose(expert_time_mask)
-#         # )
-#         # )
-
-#         print("reward v 6")
-
-#         # since sqrt is monotonic transformation, it can be removed in the optimization.
-#         return result / (self.batch_size * self.batch_size)
-
-#         # norm = tf.sqrt(norm2)
-#         # return norm
-
-#     def compute_loglik_interval(self, learner_time_interval2, learner_time_mat_mask2, final_time_mask2):
-
-#         hidden_state = tf.zeros([self.batch_size, self.state_size], tf.float32)
-#         C_t = tf.zeros([self.batch_size, self.state_size], tf.float32)
-
-#         cum_output = tf.zeros([self.batch_size, 1])
-#         loglik_interval_array = []
-#         log_survival_array    = []
-#         for i in range(self.seq_len):
-#             # the number 2 here is to compensate the 2 we put in the generator.
-#             # sigma = tf.exp(tf.matmul(hidden_state, self.V) + self.b2)
-#             sigma = (tf.nn.elu(tf.matmul(hidden_state, self.V) + self.b2) + 1)
-
-#             output = tf.reshape(learner_time_interval2[:,i], [self.batch_size, 1])
-#             # output_mask = tf.reshape(learner_time_mat_mask2[:,i], [self.batch_size, 1])
-
-#             loglik_interval = (tf.log(sigma) - sigma * output)
-#             loglik_interval_array.append(loglik_interval)
-#             # log_survival = -sigma * (self.T_max-cum_output)
-#             # log_survival_array.append(log_survival)
-
-#             cum_output += output
-
-#             aug_state = tf.concat([hidden_state, cum_output], axis=1)
-
-#             f_t = tf.nn.sigmoid(tf.matmul(aug_state, self.W_f) + self.b_f)
-#             i_t = tf.nn.sigmoid(tf.matmul(aug_state, self.W_i) + self.b_i)
-#             tC_t = tf.nn.tanh(tf.matmul(aug_state, self.W_C) + self.b_C)
-#             C_t = f_t * C_t + i_t * tC_t
-#             o_t = tf.nn.sigmoid(tf.matmul(aug_state, self.W_o) + self.b_o)
-
-#             hidden_state = o_t * tf.nn.tanh(C_t)
-
-#         # hidden_state = tf.nn.tanh(
-#             # 	tf.matmul(tf.concat([hidden_state, cum_output], axis=1), self.W)
-#             # 	+ self.b1
-#             # )
-
-#         # tmp_sum = tf.reduce_sum(
-#         # 	learner_time_mat_mask2 * tf.concat(loglik_interval_array, axis=1),
-#         # 	axis=1
-#         # )
-#         tmp = learner_time_mat_mask2 * tf.concat(loglik_interval_array, axis=1)
-#         # adding the survival term with mask, in general it seems that tf.Tensor object
-#         # works with masking but not direct indexing
-#         # tmp_survival = tf.reduce_sum(
-#         # 	final_time_mask2 * tf.concat(log_survival_array, axis=1),
-#         # 	axis=1
-#         # )
-#         # tmp_sum += tmp_survival
-
-#         print("new comp loglik 6")
-
-#         # since entire sequence gets the same log-likelihood term,
-#         # we replicate it to the entire sequence
-#         return tmp
-
-# if __name__ == "__main__":
-#     tf.set_random_seed(1)
-#     # Start training
-#     with tf.Session() as sess:
-#         step_size        = 7
-#         lstm_hidden_size = 5
-#         loc_hidden_size  = 10
-#         mak_hidden_size  = 10
-#         m_dim            = 3
-#         batch_size       = 6
-#         # initialize customized LSTM
-#         clstm = CustomizedStochasticLSTM(batch_size, step_size, lstm_hidden_size, loc_hidden_size, mak_hidden_size, m_dim)
-#         # Initialize the variables (i.e. assign their default value)
-#         init = tf.global_variables_initializer()
-#         # Run the initializer
-#         sess.run(init)
-#         print(clstm.debug(sess))
