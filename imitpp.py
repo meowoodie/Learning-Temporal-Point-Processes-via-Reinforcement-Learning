@@ -196,7 +196,7 @@ class PointProcessGenerator(object):
     Point Process Generator
     """
 
-    def __init__(self, T, seq_len, lstm_hidden_size, loc_hidden_size, mak_hidden_size, m_dim, kernel_bandwidth=1):
+    def __init__(self, T, seq_len, lstm_hidden_size, loc_hidden_size, mak_hidden_size, m_dim):
         """
         Params:
         """
@@ -205,7 +205,6 @@ class PointProcessGenerator(object):
         self.t_dim   = 1                # by default
         self.l_dim   = 2                # by default
         self.m_dim   = m_dim            # number of categories of marks
-        self.kb      = kernel_bandwidth # kernel bandwidth for kernel densitiy estimation
         self.seq_len = seq_len          # length of each generated sequences
         # LSTM generator
         self.cslstm  = CustomizedStochasticLSTM(
@@ -259,7 +258,7 @@ class PointProcessGenerator(object):
         # calculate average rewards
         reward = self._reward(batch_size, \
                               expert_seq_t,  expert_seq_l,  expert_seq_m, \
-                              learner_seq_t, learner_seq_l, learner_seq_m) # [batch_size*seq_len, 1]
+                              learner_seq_t, learner_seq_l, learner_seq_m) # [x*seq_len, 1]
 
         # cost and optimizer
         self.cost      = tf.reduce_sum(tf.multiply(reward, learner_seq_loglik), axis=0) / batch_size
@@ -269,20 +268,18 @@ class PointProcessGenerator(object):
         # self.test = self.cost
 
     def _reward(self, batch_size,
-            expert_seq_t, expert_seq_l, expert_seq_m,     # expert sequences
-            learner_seq_t, learner_seq_l, learner_seq_m): # learner sequences
+            expert_seq_t, expert_seq_l, expert_seq_m,    # expert sequences
+            learner_seq_t, learner_seq_l, learner_seq_m, # learner sequences
+            kernel_bandwidth=1): 
         """reward function"""
         # concatenate each data dimension for both expert sequence and learner sequence
         expert_seq  = tf.concat([expert_seq_t, expert_seq_l, expert_seq_m], axis=1)    # [batch_size*seq_len, t_dim+l_dim+m_dim]
         learner_seq = tf.concat([learner_seq_t, learner_seq_l, learner_seq_m], axis=1) # [batch_size*seq_len, t_dim+l_dim+m_dim]
         # calculate upper-half kernel matrix
-        kernel = self.__kernel_matrix(learner_seq, expert_seq) # [batch_size*seq_len, 2*batch_size*seq_len]
-        # block size
-        left_block_size  = tf.shape(expert_seq)[0]  # batch_size*seq_len
-        right_block_size = tf.shape(learner_seq)[1] # batch_size*seq_len
+        learner_learner_kernel, learner_expert_kernel = self.__kernel_matrix(learner_seq, expert_seq, kernel_bandwidth) # [batch_size*seq_len, 2*batch_size*seq_len]
         # calculate reward for each of data point in learner sequence
-        emp_expert_mean  = tf.reduce_sum(kernel[:, :left_block_size], axis=1) / batch_size   # batch_size*seq_len
-        emp_learner_mean = tf.reduce_sum(kernel[:, -right_block_size:], axis=1) / batch_size # batch_size*seq_len
+        emp_expert_mean  = tf.reduce_sum(learner_learner_kernel, axis=1) / batch_size   # batch_size*seq_len
+        emp_learner_mean = tf.reduce_sum(learner_expert_kernel, axis=1) / batch_size # batch_size*seq_len
         return tf.expand_dims(emp_expert_mean - emp_learner_mean, -1) # [batch_size*seq_len, 1]
 
     def train(self, sess, batch_size, 
@@ -382,14 +379,35 @@ class PointProcessGenerator(object):
         return seq
 
     @staticmethod
-    def __kernel_matrix(learner_seq, expert_seq):
+    def __kernel_matrix(learner_seq, expert_seq, kernel_bandwidth):
         """
         construct kernel matrix based on learn sequence and expert sequence, each entry of the matrix 
-        is the distance between two data points in learner_seq or expert_seq
+        is the distance between two data points in learner_seq or expert_seq. return two matrix, left_mat 
+        is the distances between learn sequence and learn sequence, right_mat is the distances between 
+        learn sequence and expert sequence.
         """
-        left_mat  = utils.l2_norm(learner_seq, learner_seq) # [batch_size*seq_len, batch_size*seq_len]
-        right_mat = utils.l2_norm(learner_seq, expert_seq)  # [batch_size*seq_len, batch_size*seq_len]
-        return tf.concat([left_mat, right_mat], axis=1)     # [batch_size*seq_len, 2*batch_size*seq_len]
+        def nonzero_mask(seq):
+            # data dimension
+            d    = tf.shape(seq)[-1] 
+            # 2D seq mask: 0 for zero, 1 for nonzero
+            mask = tf.cast(seq > 0, tf.float32)                    # [seq_len, data_dim]
+            mask = tf.expand_dims(tf.reduce_sum(mask, axis=1), -1) # [seq_len, 1]
+            mask = tf.cast(mask > 0, tf.float32)                   # [seq_len, 1]
+            return mask
+        # calculate l2 distances
+        learner_learner_mat = utils.l2_norm(learner_seq, learner_seq) # [batch_size*seq_len, batch_size*seq_len]
+        learner_expert_mat  = utils.l2_norm(learner_seq, expert_seq)  # [batch_size*seq_len, batch_size*seq_len]
+        # exponential kernel
+        learner_learner_mat = tf.exp(-tf.square(learner_learner_mat) / kernel_bandwidth)
+        learner_expert_mat  = tf.exp(-tf.square(learner_expert_mat) / kernel_bandwidth)
+        # # remove invalid entries
+        learner_seq_mask = nonzero_mask(learner_seq)
+        expert_seq_mask  = nonzero_mask(expert_seq)
+        learner_learner_mat_mask = tf.matmul(learner_seq_mask, tf.transpose(expert_seq_mask))
+        learner_expert_mat_mask  = tf.matmul(learner_seq_mask, tf.transpose(expert_seq_mask))
+        learner_learner_mat = tf.multiply(learner_learner_mat, learner_learner_mat_mask)
+        learner_expert_mat  = tf.multiply(learner_expert_mat, learner_expert_mat_mask)
+        return learner_learner_mat, learner_expert_mat
 
     # def debug(self, sess, input_seq_t, input_seq_l, input_seq_m):
     #     return sess.run(self.test, feed_dict={
@@ -526,21 +544,19 @@ if __name__ == "__main__":
         ppg = PointProcessGenerator(
             T=T, seq_len=step_size, 
             lstm_hidden_size=lstm_hidden_size, loc_hidden_size=loc_hidden_size, mak_hidden_size=mak_hidden_size, 
-            m_dim=m_dim, kernel_bandwidth=1)
+            m_dim=m_dim)
 
         ppg.train(sess, 
             batch_size, epoches, 
             expert_seq_t, expert_seq_l, expert_seq_m,
             train_test_ratio = 2.)
 
-
-        # # initialize customized LSTM
-        # clstm = CustomizedStochasticLSTM(step_size, lstm_hidden_size, loc_hidden_size, mak_hidden_size, m_dim)
-        # clstm.initialize_network(batch_size)
+        # ppg._initialize_policy_network(batch_size)
         # # Initialize the variables (i.e. assign their default value)
         # init = tf.global_variables_initializer()
         # # Run the initializer
         # sess.run(init)
-        # print(clstm.debug(sess))
+        # print(ppg.debug(sess, expert_seq_t, expert_seq_l, expert_seq_m))
+        
 
     
