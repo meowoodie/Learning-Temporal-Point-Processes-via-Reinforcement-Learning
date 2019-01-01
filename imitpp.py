@@ -74,12 +74,12 @@ class CustomizedStochasticLSTM(object):
         # - lstm_state.c: cell state   [batch_size, lstm_hidden_size]
         init_lstm_state = tf_lstm_cell.zero_state(batch_size, dtype=tf.float32)
         # construct customized LSTM network
-        self.seq_t, self.seq_l, self.seq_m, self.seq_loglik, self.final_state = self.recurrent_structure(
+        self.seq_t, self.seq_l, self.seq_m, self.seq_loglik, self.final_state = self._recurrent_structure(
             batch_size, tf_lstm_cell, init_lstm_state)
         # # TODO: Debug
         # self.test = self.seq_m
 
-    def recurrent_structure(self, 
+    def _recurrent_structure(self, 
             batch_size, 
             tf_lstm_cell,     # tensorflow LSTM cell object, e.g. 'tf.nn.rnn_cell.BasicLSTMCell'
             init_lstm_state): # initial LSTM state tensor
@@ -212,7 +212,7 @@ class PointProcessGenerator(object):
             step_size=seq_len, lstm_hidden_size=lstm_hidden_size, 
             loc_hidden_size=loc_hidden_size, mak_hidden_size=mak_hidden_size, m_dim=m_dim)
     
-    def initialize_policy_network(self, batch_size):
+    def _initialize_policy_network(self, batch_size, starter_learning_rate=0.01, decay_rate=0.99, decay_step=100):
         """
         Construct Policy Network
         
@@ -259,19 +259,19 @@ class PointProcessGenerator(object):
         # calculate average rewards
         reward = self._reward(batch_size, \
                               expert_seq_t,  expert_seq_l,  expert_seq_m, \
-                              learner_seq_t, learner_seq_l, learner_seq_m)
+                              learner_seq_t, learner_seq_l, learner_seq_m) # [batch_size*seq_len, 1]
 
         # cost and optimizer
-        self.cost = tf.reduce_sum(tf.multiply(reward, learner_seq_loglik), axis=0) / batch_size
-        # learning_rate = tf.train.exponential_decay(starter_learning_rate, global_step, decay_step, decay_rate, staircase=True)
-        # self.optimizer = tf.train.AdamOptimizer(
-        #     learning_rate, beta1=0.6, beta2=0.9).minimize(self.cost, global_step=global_step)
-        self.test = self.cost
+        self.cost      = tf.reduce_sum(tf.multiply(reward, learner_seq_loglik), axis=0) / batch_size
+        global_step    = tf.Variable(0, trainable=False)
+        learning_rate  = tf.train.exponential_decay(starter_learning_rate, global_step, decay_step, decay_rate, staircase=True)
+        self.optimizer = tf.train.AdamOptimizer(learning_rate, beta1=0.6, beta2=0.9).minimize(self.cost, global_step=global_step)
+        # self.test = self.cost
 
     def _reward(self, batch_size,
-        expert_seq_t, expert_seq_l, expert_seq_m,     # expert sequences
-        learner_seq_t, learner_seq_l, learner_seq_m): # learner sequences
-        """reward"""
+            expert_seq_t, expert_seq_l, expert_seq_m,     # expert sequences
+            learner_seq_t, learner_seq_l, learner_seq_m): # learner sequences
+        """reward function"""
         # concatenate each data dimension for both expert sequence and learner sequence
         expert_seq  = tf.concat([expert_seq_t, expert_seq_l, expert_seq_m], axis=1)    # [batch_size*seq_len, t_dim+l_dim+m_dim]
         learner_seq = tf.concat([learner_seq_t, learner_seq_l, learner_seq_m], axis=1) # [batch_size*seq_len, t_dim+l_dim+m_dim]
@@ -284,6 +284,82 @@ class PointProcessGenerator(object):
         emp_expert_mean  = tf.reduce_sum(kernel[:, :left_block_size], axis=1) / batch_size   # batch_size*seq_len
         emp_learner_mean = tf.reduce_sum(kernel[:, -right_block_size:], axis=1) / batch_size # batch_size*seq_len
         return tf.expand_dims(emp_expert_mean - emp_learner_mean, -1) # [batch_size*seq_len, 1]
+
+    def train(self, sess, batch_size, 
+            epoches,               # number of epoches (how many times is the entire dataset going to be trained)
+            expert_seq_t,          # [n, seq_len, 1]
+            expert_seq_l,          # [n, seq_len, 2]
+            expert_seq_m,          # [n, seq_len, m_dim]
+            train_test_ratio = 9., # n_train / n_test
+            pretrained=False):
+        """train"""
+        assert expert_seq_t.shape[:-1] == expert_seq_l.shape[:-1] == expert_seq_m.shape[:-1], \
+            "inconsistant 'number of sequences' or 'sequence length' of input expert sequences"
+
+        # initialization
+        if not pretrained:
+            # initialize policy network
+            self._initialize_policy_network(batch_size)
+            # initialize network parameters
+            init_op = tf.global_variables_initializer()
+            sess.run(init_op)
+
+        # data configurations
+        # - number of expert sequences
+        n_data  = expert_seq_t.shape[0]
+        n_train = int(n_data * train_test_ratio / (train_test_ratio + 1.))
+        n_test  = int(n_data * 1. / (train_test_ratio + 1.))
+        # - number of batches
+        n_batches = int(n_train / batch_size)
+        # - check if test data size is large enough (> batch_size)
+        assert n_test >= batch_size, "test data size %d is less than batch size %d." % (n_test, batch_size)
+        
+        # training over epoches
+        for epoch in range(epoches):
+            # shuffle indices of the training samples
+            shuffled_ids = np.arange(n_data)
+            np.random.shuffle(shuffled_ids)
+            shuffled_train_ids = shuffled_ids[:n_train]
+            shuffled_test_ids  = shuffled_ids[-n_test:]
+
+            # training over batches
+            avg_train_cost = []
+            avg_test_cost  = []
+            for b in range(n_batches):
+                idx             = np.arange(batch_size * b, batch_size * (b + 1))
+                # training and testing indices selected in current batch
+                batch_train_ids = shuffled_train_ids[idx]
+                batch_test_ids  = shuffled_test_ids[:batch_size]
+                # training and testing batch data
+                batch_train_expert_t = expert_seq_t[batch_train_ids, :, :]
+                batch_train_expert_l = expert_seq_l[batch_train_ids, :, :]
+                batch_train_expert_m = expert_seq_m[batch_train_ids, :, :]
+                batch_test_expert_t  = expert_seq_t[batch_test_ids, :, :]
+                batch_test_expert_l  = expert_seq_l[batch_test_ids, :, :]
+                batch_test_expert_m  = expert_seq_m[batch_test_ids, :, :]
+                # optimization procedure
+                sess.run(self.optimizer, feed_dict={
+                    self.input_seq_t: batch_train_expert_t,
+                    self.input_seq_l: batch_train_expert_l,
+                    self.input_seq_m: batch_train_expert_m})
+                # cost for train batch and test batch
+                train_cost = sess.run(self.cost, feed_dict={
+                    self.input_seq_t: batch_train_expert_t,
+                    self.input_seq_l: batch_train_expert_l,
+                    self.input_seq_m: batch_train_expert_m})
+                test_cost  = sess.run(self.cost, feed_dict={
+                    self.input_seq_t: batch_test_expert_t,
+                    self.input_seq_l: batch_test_expert_l,
+                    self.input_seq_m: batch_test_expert_m})
+                # record cost for each batch
+                avg_train_cost.append(train_cost)
+                avg_test_cost.append(test_cost)
+            # training log output
+            avg_train_cost = np.mean(avg_train_cost)
+            avg_test_cost  = np.mean(avg_test_cost)
+            print('[%s] Epoch %d (n_train_batches=%d, batch_size=%d)' % (arrow.now(), epoch, n_batches, batch_size), file=sys.stderr)
+            print('[%s] Training cost:\t%f' % (arrow.now(), avg_train_cost), file=sys.stderr)
+            print('[%s] Testing cost:\t%f' % (arrow.now(), avg_test_cost), file=sys.stderr)
         
     @staticmethod
     def __truncate_by_T(trunc_seq, T, seq_t):
@@ -315,14 +391,38 @@ class PointProcessGenerator(object):
         right_mat = utils.l2_norm(learner_seq, expert_seq)  # [batch_size*seq_len, batch_size*seq_len]
         return tf.concat([left_mat, right_mat], axis=1)     # [batch_size*seq_len, 2*batch_size*seq_len]
 
-    def debug(self, sess, input_seq_t, input_seq_l, input_seq_m):
-        return sess.run(self.test, feed_dict={
-            self.input_seq_t: input_seq_t,
-            self.input_seq_l: input_seq_l,
-            self.input_seq_m: input_seq_m})
+    # def debug(self, sess, input_seq_t, input_seq_l, input_seq_m):
+    #     return sess.run(self.test, feed_dict={
+    #         self.input_seq_t: input_seq_t,
+    #         self.input_seq_l: input_seq_l,
+    #         self.input_seq_m: input_seq_m})
 
 if __name__ == "__main__":
     expert_seq_t = [
+        [[ 2.2372603], 
+        [ 7.3469152],
+        [10.841639 ],
+        [11.278158 ],
+        [11.875915 ]],
+
+        [[ 4.601893 ],
+        [ 7.6262646],
+        [ 8.953828 ],
+        [11.48958  ],
+        [13.335195 ]],
+        
+        [[ 2.2372603], 
+        [ 7.3469152],
+        [10.841639 ],
+        [11.278158 ],
+        [11.875915 ]],
+
+        [[ 4.601893 ],
+        [ 7.6262646],
+        [ 8.953828 ],
+        [11.48958  ],
+        [13.335195 ]],
+        
         [[ 2.2372603], 
         [ 7.3469152],
         [10.841639 ],
@@ -346,6 +446,30 @@ if __name__ == "__main__":
         [ 4.9495239e+02,  5.6867313e+00],
         [-5.8737720e+02,  1.8419909e+00],
         [-1.5442281e+00, -1.3099791e+00],
+        [ 4.1468458e+00,  8.7737030e-01]],
+        
+        [[-9.7975151e+01,  2.7360342e+00],
+        [-5.2876039e+00, -6.6114247e-01],
+        [-7.1111503e+00, -8.5162185e-03],
+        [ 1.1980354e+01,  1.2619636e+00],
+        [ 3.5298267e+02,  5.9427624e+00]],
+
+        [[ 2.0113881e+03,  5.1461897e+00],
+        [ 4.9495239e+02,  5.6867313e+00],
+        [-5.8737720e+02,  1.8419909e+00],
+        [-1.5442281e+00, -1.3099791e+00],
+        [ 4.1468458e+00,  8.7737030e-01]],
+        
+        [[-9.7975151e+01,  2.7360342e+00],
+        [-5.2876039e+00, -6.6114247e-01],
+        [-7.1111503e+00, -8.5162185e-03],
+        [ 1.1980354e+01,  1.2619636e+00],
+        [ 3.5298267e+02,  5.9427624e+00]],
+
+        [[ 2.0113881e+03,  5.1461897e+00],
+        [ 4.9495239e+02,  5.6867313e+00],
+        [-5.8737720e+02,  1.8419909e+00],
+        [-1.5442281e+00, -1.3099791e+00],
         [ 4.1468458e+00,  8.7737030e-01]]]
     
     expert_seq_m = [
@@ -359,7 +483,33 @@ if __name__ == "__main__":
         [1., 0., 0.],
         [1., 0., 0.],
         [0., 1., 0.],
+        [0., 1., 0.]],
+        
+        [[0., 0., 1.],
+        [0., 1., 0.],
+        [0., 1., 0.],
+        [0., 1., 0.],
+        [0., 1., 0.]],
+
+        [[1., 0., 0.],
+        [1., 0., 0.],
+        [1., 0., 0.],
+        [0., 1., 0.],
+        [0., 1., 0.]],
+        
+        [[0., 0., 1.],
+        [0., 1., 0.],
+        [0., 1., 0.],
+        [0., 1., 0.],
+        [0., 1., 0.]],
+
+        [[1., 0., 0.],
+        [1., 0., 0.],
+        [1., 0., 0.],
+        [0., 1., 0.],
         [0., 1., 0.]]]
+
+    expert_seq_t, expert_seq_l, expert_seq_m = np.array(expert_seq_t), np.array(expert_seq_l), np.array(expert_seq_m)
 
     tf.set_random_seed(1)
     # Start training
@@ -371,19 +521,17 @@ if __name__ == "__main__":
         m_dim            = 3
         batch_size       = 2
         T                = 11.
+        epoches          = 10
 
         ppg = PointProcessGenerator(
             T=T, seq_len=step_size, 
             lstm_hidden_size=lstm_hidden_size, loc_hidden_size=loc_hidden_size, mak_hidden_size=mak_hidden_size, 
             m_dim=m_dim, kernel_bandwidth=1)
-        
-        ppg.initialize_policy_network(batch_size)
 
-        # Initialize the variables (i.e. assign their default value)
-        init = tf.global_variables_initializer()
-        sess.run(init)
-
-        print(ppg.debug(sess, expert_seq_t, expert_seq_l, expert_seq_m))
+        ppg.train(sess, 
+            batch_size, epoches, 
+            expert_seq_t, expert_seq_l, expert_seq_m,
+            train_test_ratio = 2.)
 
 
         # # initialize customized LSTM
