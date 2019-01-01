@@ -14,9 +14,9 @@ Dependencies:
 - tensorflow==1.5.0
 """
 
-
 import sys
 import arrow
+import utils
 import random
 import numpy as np
 import tensorflow as tf
@@ -74,7 +74,8 @@ class CustomizedStochasticLSTM(object):
         # - lstm_state.c: cell state   [batch_size, lstm_hidden_size]
         init_lstm_state = tf_lstm_cell.zero_state(batch_size, dtype=tf.float32)
         # construct customized LSTM network
-        self.seq_t, self.seq_l, self.seq_m, self.final_state = self.recurrent_structure(batch_size, tf_lstm_cell, init_lstm_state)
+        self.seq_t, self.seq_l, self.seq_m, self.seq_loglik, self.final_state = self.recurrent_structure(
+            batch_size, tf_lstm_cell, init_lstm_state)
         # # TODO: Debug
         # self.test = self.seq_m
 
@@ -87,21 +88,24 @@ class CustomizedStochasticLSTM(object):
         # - init_t: initial time     [batch_size, t_dim] 
         init_t = tf.zeros([batch_size, self.t_dim], dtype=tf.float32)
         # concatenate each customized LSTM cell by loop
-        seq_t = [] # generated sequence initialization
-        seq_l = []
-        seq_m = []
+        seq_t      = [] # generated sequence initialization
+        seq_l      = []
+        seq_m      = []
+        seq_loglik = []
         last_t, last_lstm_state = init_t, init_lstm_state # loop initialization
         for _ in range(self.step_size):
-            t, l, m, state = self._customized_lstm_cell(batch_size, tf_lstm_cell, last_lstm_state, last_t)
-            seq_t.append(t)         # record generated time 
-            seq_l.append(l)         # record generated location
-            seq_m.append(m)         # record generated mark 
-            last_t          = t     # reset last_t
-            last_lstm_state = state # reset last_lstm_state
-        seq_t = tf.stack(seq_t, axis=1)
-        seq_l = tf.stack(seq_l, axis=1) 
-        seq_m = tf.stack(seq_m, axis=1)
-        return seq_t, seq_l, seq_m, state
+            t, l, m, loglik, state = self._customized_lstm_cell(batch_size, tf_lstm_cell, last_lstm_state, last_t)
+            seq_t.append(t)           # record generated time 
+            seq_l.append(l)           # record generated location
+            seq_m.append(m)           # record generated mark 
+            seq_loglik.append(loglik) # record log likelihood  
+            last_t          = t       # reset last_t
+            last_lstm_state = state   # reset last_lstm_state
+        seq_t      = tf.stack(seq_t, axis=1)
+        seq_l      = tf.stack(seq_l, axis=1) 
+        seq_m      = tf.stack(seq_m, axis=1)
+        seq_loglik = tf.stack(seq_loglik, axis=1)
+        return seq_t, seq_l, seq_m, seq_loglik, state
 
     def _customized_lstm_cell(self, batch_size, 
             tf_lstm_cell, # tensorflow LSTM cell object, e.g. 'tf.nn.rnn_cell.BasicLSTMCell'
@@ -118,22 +122,28 @@ class CustomizedStochasticLSTM(object):
         to next moment is a customized stochastic variable which depends on the last moment's rnn output. 
         """
         # stochastic neurons for generating time, location and mark
-        next_t = last_t + self._dt(batch_size, last_state.h) # [batch_size, t_dim]
-        next_l = self._l(batch_size, last_state.h) # [batch_size, 2] 
-        next_m = self._m(batch_size, last_state.h) # [batch_size, m_dim] 
+        delta_t, loglik_t = self._dt(batch_size, last_state.h) # [batch_size, t_dim], [batch_size, 1] 
+        next_l,  loglik_l = self._l(batch_size, last_state.h)  # [batch_size, 2],     [batch_size, 1] 
+        next_m,  loglik_m = self._m(batch_size, last_state.h)  # [batch_size, m_dim], [batch_size, 1]  
+        next_t = last_t + delta_t                              # [batch_size, t_dim]
+        # log likelihood
+        loglik = loglik_t + loglik_l # + loglik_m # TODO: Add mark to input x
+        # input of LSTM
         x      = tf.concat([next_t, next_l], axis=1) # TODO: Add mark to input x
         # one step rnn structure
         # - x is a tensor that contains a single step of data points with shape [batch_size, t_dim + l_dim + m_dim]
         # - state is a tensor of hidden state with shape [2, batch_size, state_size]
         _, next_state = tf.nn.static_rnn(tf_lstm_cell, [x], initial_state=last_state, dtype=tf.float32)
-        return next_t, next_l, next_m, next_state
+        return next_t, next_l, next_m, loglik, next_state
 
     def _dt(self, batch_size, hidden_state):
         """Sampling time interval given hidden state of LSTM"""
-        theta_h = tf.nn.elu(tf.matmul(hidden_state, self.Wt) + self.bt) + 1
+        theta_h = tf.nn.elu(tf.matmul(hidden_state, self.Wt) + self.bt) + 1                         # [batch_size, t_dim]
         # reparameterization trick for sampling action from exponential distribution
-        delta_t = - tf.log(tf.random_uniform([batch_size, self.t_dim], dtype=tf.float32)) / theta_h
-        return delta_t # [batch_size, t_dim]
+        delta_t = - tf.log(tf.random_uniform([batch_size, self.t_dim], dtype=tf.float32)) / theta_h # [batch_size, t_dim]
+        # log likelihood
+        loglik  = - tf.multiply(theta_h, delta_t) + tf.log(theta_h)                                 # [batch_size, 1]
+        return delta_t, loglik 
 
     def _l(self, batch_size, hidden_state):
         """Sampling location shifts given hidden state of LSTM"""
@@ -151,19 +161,18 @@ class CustomizedStochasticLSTM(object):
         # location x and y
         x = mu0 + tf.multiply(sigma11, rv0) + tf.multiply(sigma12, rv1)
         y = mu1 + tf.multiply(sigma12, rv0) + tf.multiply(sigma22, rv1)
-        l = tf.concat([x, y], axis=1)  
-        # FOR LOGLIKELIHOOD
-        # sigma1 = tf.sqrt(tf.square(sigma11) + tf.square(sigma12))
-        # sigma2 = tf.sqrt(tf.square(sigma12) + tf.square(sigma22))
-        # V12 = tf.multiply(sigma11, sigma12) + tf.multiply(sigma12, sigma22)
-        # rho = V12 / tf.multiply(sigma1, sigma2)
-        # z = tf.square(output_location_x - mu0) / tf.square(sigma1) \
-        #     - 2 * tf.multiply(rho, tf.multiply(output_location_x - mu0, output_location_y - mu1)) / tf.multiply(sigma1,
-        #                                                                                                         sigma2) \
-        #     + tf.square(output_location_y - mu1) / tf.square(sigma2)
-        # loglik = -z / 2 / (1 - tf.square(rho)) - tf.log(
-        #     2 * pi * tf.multiply(tf.multiply(sigma1, sigma2), tf.sqrt(1 - tf.square(rho))))
-        return l # [batch_size, 2]
+        l = tf.concat([x, y], axis=1) # [batch_size, 2]
+        # log likelihood
+        sigma1 = tf.sqrt(tf.square(sigma11) + tf.square(sigma12))
+        sigma2 = tf.sqrt(tf.square(sigma12) + tf.square(sigma22))
+        v12 = tf.multiply(sigma11, sigma12) + tf.multiply(sigma12, sigma22)
+        rho = v12 / tf.multiply(sigma1, sigma2)
+        z   = tf.square(x - mu0) / tf.square(sigma1) \
+            - 2 * tf.multiply(rho, tf.multiply(x - mu0, y - mu1)) / tf.multiply(sigma1, sigma2) \
+            + tf.square(y - mu1) / tf.square(sigma2)
+        loglik = -z / 2 / (1 - tf.square(rho)) - tf.log(
+            2 * np.pi * tf.multiply(tf.multiply(sigma1, sigma2), tf.sqrt(1 - tf.square(rho))))
+        return l, loglik
     
     def _m(self, batch_size, hidden_state):
         """Sampling mark given hidden state of LSTM"""
@@ -174,12 +183,12 @@ class CustomizedStochasticLSTM(object):
         rv_uniform = tf.random_uniform([batch_size, self.m_dim])
         rv_Gumbel  = -tf.log(-tf.log(rv_uniform + eps) + eps)
         label      = tf.argmax(dense_feature + rv_Gumbel, axis=1) # label: [batch]
-        m          = tf.one_hot(indices=label, depth=self.m_dim)
-        return m # [batch_size, m_dim]
+        m          = tf.one_hot(indices=label, depth=self.m_dim)  # [batch_size, m_dim]
+        # log likelihood
+        prob       = tf.nn.softmax(dense_feature)
+        loglik     = tf.log(tf.reduce_sum(m * prob, 1) + 1e-13)
+        return m, loglik
 
-    # def debug(self, sess):
-    #     return sess.run(self.test)
-      
 
 
 class PointProcessGenerator(object):
@@ -222,50 +231,72 @@ class PointProcessGenerator(object):
         self.cslstm.initialize_network(batch_size)
         # generated tensors: learner sequences (time, location, marks)
         learner_seq_t, learner_seq_l, learner_seq_m = self.cslstm.seq_t, self.cslstm.seq_l, self.cslstm.seq_m
+        # log likelihood
+        learner_seq_loglik = self.cslstm.seq_loglik
         
         # sequences preprocessing
         # - truncate sequences after time T
-        expert_seq_t,  expert_seq_l,  expert_seq_m  = self.__truncate_by_T(
-            self.input_seq_t, self.input_seq_l, self.input_seq_m, self.T)
-        learner_seq_t, learner_seq_l, learner_seq_m = self.__truncate_by_T(
-            learner_seq_t, learner_seq_l, learner_seq_m, self.T)
+        expert_seq_t, expert_seq_l, expert_seq_m, = \
+            self.__truncate_by_T(self.input_seq_t, T=self.T, seq_t=self.input_seq_t), \
+            self.__truncate_by_T(self.input_seq_l, T=self.T, seq_t=self.input_seq_t), \
+            self.__truncate_by_T(self.input_seq_m, T=self.T, seq_t=self.input_seq_t)
+        learner_seq_t, learner_seq_l, learner_seq_m, learner_seq_loglik = \
+            self.__truncate_by_T(learner_seq_t, T=self.T, seq_t=self.input_seq_t), \
+            self.__truncate_by_T(learner_seq_l, T=self.T, seq_t=self.input_seq_t), \
+            self.__truncate_by_T(learner_seq_m, T=self.T, seq_t=self.input_seq_t), \
+            self.__truncate_by_T(learner_seq_loglik, T=self.T, seq_t=self.input_seq_t)
         # - concatenate batches in the sequences
         expert_seq_t,  expert_seq_l,  expert_seq_m  = \
             self.__concatenate_batch(expert_seq_t), \
             self.__concatenate_batch(expert_seq_l), \
             self.__concatenate_batch(expert_seq_m)
-        learner_seq_t, learner_seq_l, learner_seq_m = \
+        learner_seq_t, learner_seq_l, learner_seq_m, learner_seq_loglik = \
             self.__concatenate_batch(learner_seq_t), \
             self.__concatenate_batch(learner_seq_l), \
-            self.__concatenate_batch(learner_seq_m)
+            self.__concatenate_batch(learner_seq_m), \
+            self.__concatenate_batch(learner_seq_loglik)
         
-        self._reward(expert_seq_t,  expert_seq_l,  expert_seq_m, \
-                     learner_seq_t, learner_seq_l, learner_seq_m)
-        
-        self.test = self.__concatenate_batch(expert_seq_t)
+        # calculate average rewards
+        reward = self._reward(batch_size, \
+                              expert_seq_t,  expert_seq_l,  expert_seq_m, \
+                              learner_seq_t, learner_seq_l, learner_seq_m)
 
-    def _reward(self, 
+        # cost and optimizer
+        self.cost = tf.reduce_sum(tf.multiply(reward, learner_seq_loglik), axis=0) / batch_size
+        # learning_rate = tf.train.exponential_decay(starter_learning_rate, global_step, decay_step, decay_rate, staircase=True)
+        # self.optimizer = tf.train.AdamOptimizer(
+        #     learning_rate, beta1=0.6, beta2=0.9).minimize(self.cost, global_step=global_step)
+        self.test = self.cost
+
+    def _reward(self, batch_size,
         expert_seq_t, expert_seq_l, expert_seq_m,     # expert sequences
         learner_seq_t, learner_seq_l, learner_seq_m): # learner sequences
         """reward"""
-        pass
-
+        # concatenate each data dimension for both expert sequence and learner sequence
+        expert_seq  = tf.concat([expert_seq_t, expert_seq_l, expert_seq_m], axis=1)    # [batch_size*seq_len, t_dim+l_dim+m_dim]
+        learner_seq = tf.concat([learner_seq_t, learner_seq_l, learner_seq_m], axis=1) # [batch_size*seq_len, t_dim+l_dim+m_dim]
+        # calculate upper-half kernel matrix
+        kernel = self.__kernel_matrix(learner_seq, expert_seq) # [batch_size*seq_len, 2*batch_size*seq_len]
+        # block size
+        left_block_size  = tf.shape(expert_seq)[0]  # batch_size*seq_len
+        right_block_size = tf.shape(learner_seq)[1] # batch_size*seq_len
+        # calculate reward for each of data point in learner sequence
+        emp_expert_mean  = tf.reduce_sum(kernel[:, :left_block_size], axis=1) / batch_size   # batch_size*seq_len
+        emp_learner_mean = tf.reduce_sum(kernel[:, -right_block_size:], axis=1) / batch_size # batch_size*seq_len
+        return tf.expand_dims(emp_expert_mean - emp_learner_mean, -1) # [batch_size*seq_len, 1]
+        
     @staticmethod
-    def __truncate_by_T(seq_t, seq_l, seq_m, T):
+    def __truncate_by_T(trunc_seq, T, seq_t):
         """masking time, location and mark sequences for the entries before the maximum time T."""
-        l_dim   = tf.shape(seq_l)[-1]
-        m_dim   = tf.shape(seq_m)[-1]
+        # data dimension of seq
+        d = tf.shape(trunc_seq)[-1]
         # squeeze since each time entry is a list with a single element. 
-        array_t = tf.squeeze(seq_t, squeeze_dims=[2]) # [batch_size, seq_len]
+        array_t = tf.squeeze(seq_t, squeeze_dims=[2])                  # [batch_size, seq_len]
         # get basic mask where 0 if t > T else 1
-        mask    = tf.cast(array_t < T, tf.float32)    # [batch_size, seq_len] 
-        mask_t  = tf.expand_dims(mask, -1)            # [batch_size, seq_len, 1]
-        mask_l  = tf.tile(mask_t, [1, 1, l_dim])      # [batch_size, seq_len, l_dim]
-        mask_m  = tf.tile(mask_t, [1, 1, m_dim])      # [batch_size, seq_len, m_dim]
+        mask_t  = tf.expand_dims(tf.cast(array_t < T, tf.float32), -1) # [batch_size, seq_len, 1] 
+        mask    = tf.tile(mask_t, [1, 1, d])                           # [batch_size, seq_len, l_dim]
         # return masked sequences
-        return tf.multiply(seq_t, mask_t), \
-               tf.multiply(seq_l, mask_l), \
-               tf.multiply(seq_m, mask_m)
+        return tf.multiply(trunc_seq, mask)
     
     @staticmethod
     def __concatenate_batch(seqs):
@@ -273,6 +304,16 @@ class PointProcessGenerator(object):
         array_seq = tf.unstack(seqs, axis=0)     # [batch_size, seq_len, data_dim]
         seq       = tf.concat(array_seq, axis=0) # [batch_size*seq_len, data_dim]
         return seq
+
+    @staticmethod
+    def __kernel_matrix(learner_seq, expert_seq):
+        """
+        construct kernel matrix based on learn sequence and expert sequence, each entry of the matrix 
+        is the distance between two data points in learner_seq or expert_seq
+        """
+        left_mat  = utils.l2_norm(learner_seq, learner_seq) # [batch_size*seq_len, batch_size*seq_len]
+        right_mat = utils.l2_norm(learner_seq, expert_seq)  # [batch_size*seq_len, batch_size*seq_len]
+        return tf.concat([left_mat, right_mat], axis=1)     # [batch_size*seq_len, 2*batch_size*seq_len]
 
     def debug(self, sess, input_seq_t, input_seq_l, input_seq_m):
         return sess.run(self.test, feed_dict={
