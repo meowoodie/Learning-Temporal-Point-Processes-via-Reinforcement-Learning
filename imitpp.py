@@ -364,10 +364,12 @@ class PointProcessGenerator(object):
         # data dimension of seq
         d = tf.shape(trunc_seq)[-1]
         # squeeze since each time entry is a list with a single element. 
-        array_t = tf.squeeze(seq_t, squeeze_dims=[2])                  # [batch_size, seq_len]
+        array_t = tf.squeeze(seq_t, squeeze_dims=[2]) # [batch_size, seq_len]
         # get basic mask where 0 if t > T else 1
-        mask_t  = tf.expand_dims(tf.cast(array_t < T, tf.float32), -1) # [batch_size, seq_len, 1] 
-        mask    = tf.tile(mask_t, [1, 1, d])                           # [batch_size, seq_len, l_dim]
+        mask_t  = tf.expand_dims(tf.multiply(
+            tf.cast(array_t < T, tf.float32),
+            tf.cast(array_t > 0, tf.float32)), -1)    # [batch_size, seq_len, 1] 
+        mask    = tf.tile(mask_t, [1, 1, d])          # [batch_size, seq_len, l_dim]
         # return masked sequences
         return tf.multiply(trunc_seq, mask)
     
@@ -386,6 +388,7 @@ class PointProcessGenerator(object):
         is the distances between learn sequence and learn sequence, right_mat is the distances between 
         learn sequence and expert sequence.
         """
+        # helper function for getting nonzero 1D mask for a 2D sequence
         def nonzero_mask(seq):
             # data dimension
             d    = tf.shape(seq)[-1] 
@@ -400,7 +403,7 @@ class PointProcessGenerator(object):
         # exponential kernel
         learner_learner_mat = tf.exp(-tf.square(learner_learner_mat) / kernel_bandwidth)
         learner_expert_mat  = tf.exp(-tf.square(learner_expert_mat) / kernel_bandwidth)
-        # # remove invalid entries
+        # remove invalid entries
         learner_seq_mask = nonzero_mask(learner_seq)
         expert_seq_mask  = nonzero_mask(expert_seq)
         learner_learner_mat_mask = tf.matmul(learner_seq_mask, tf.transpose(expert_seq_mask))

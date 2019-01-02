@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-Experiment Synthetic Data
+Demo for testing basic version of imitpp on synthetic dataset
 """
 
 import sys
@@ -11,66 +11,61 @@ import random
 import numpy as np
 import tensorflow as tf
 
-from utils.ppgen import IntensityHawkesPlusGaussianMixture, IntensityHomogenuosPoisson, generate_sample
-from utils.plots import intensityplot4seqs
-from imitpp_v1 import PointProcessGenerator
+from mstppg import MSTPPGenerator
+from imitpp import PointProcessGenerator
 
 if __name__ == "__main__":
-	# np.random.seed(100)
+	# generate expert sequences
+	np.random.seed(0)
 
-	# Configuration parameters
-	# seq_len      = 30
-	batch_size   = 32
-	state_size   = 32
-	feature_size = 1  # Please fix feature_size to 1, since ppg only supports 1D feature for the time being
-	t_max        = 15.
-	data_size    = 2000
-	generate_iters = 50
-	training_iters = 10000
+	# data configuration
+	n_seq       = 10
+	T           = 10.
+	m_dim       = 5
 
-	# Generate point process with complex intensity
-	intensity = IntensityHawkesPlusGaussianMixture(mu=1, alpha=0.3, beta=1,
-                                                   k=2, centers=[t_max/4., t_max*3./4.],
-												   stds=[1, 1], coefs=[1, 1])
-	# intensity = IntensityHomogenuosPoisson(lam=1.)
-	ppsample  = generate_sample(intensity, T=t_max, n=data_size)
-	seq_len   = max([ len(ppseq) for ppseq in ppsample ])
-	# Check if max length of the poisson process sequences is less than the preset sequence length
-	# if seq_len < max_len:
-	# 	raise Exception("Insecure seq_len %d < max_len %d." % (seq_len, max_len))
-	# Padding zeros for poisson process sequences
-	expert_actions = np.zeros((data_size, seq_len, feature_size))
-	for data_ind in range(data_size):
-		for action_ind in range(len(ppsample[data_ind])):
-			ppvalue = ppsample[data_ind][action_ind]
-			expert_actions[data_ind, action_ind, 0] = ppvalue
+	# generating parameters
+	alpha       = 0.6
+	beta        = 1
+	mu          = 2
+	freq        = 1
+	magn        = 1
+	shift       = 0.5
+	n_component = 3
+	xlim        = [-5, 5]
+	ylim        = [-5, 5]
+	grid_time   = 0.1
+	grid_space  = 1
 
-	# Train point process generator by generated expert actions (poisson process sequences)
+	generator = MSTPPGenerator(
+		num_seq=n_seq, T=T, mark_vol=m_dim,
+		alpha=alpha, beta=beta, mu=mu, frequence=freq,
+		magnitude=magn, shift=shift, num_component=n_component,
+		xlim=xlim, ylim=ylim,
+		grid_time=grid_time, grid_space=grid_space)
+
+	_, expert_seq_t, expert_seq_l, expert_seq_m = generator.MSTPPSamples()
+	print(expert_seq_t)
+	print(expert_seq_t.shape)
+	print(expert_seq_l.shape)
+	print(expert_seq_m.shape)
+
+	# training model
+	tf.set_random_seed(1)
 	with tf.Session() as sess:
+		# model configuration
+		step_size        = expert_seq_t.shape[1]
+		lstm_hidden_size = 10
+		loc_hidden_size  = 10
+		mak_hidden_size  = 10
+		batch_size       = 2
+		epoches          = 10
+
 		ppg = PointProcessGenerator(
-			t_max=t_max,
-			seq_len=seq_len,
-			batch_size=batch_size,
-			state_size=state_size,
-			feature_size=feature_size,
-			iters=training_iters, display_step=10, lr=1e-4)
+			T=T, seq_len=step_size, 
+			lstm_hidden_size=lstm_hidden_size, loc_hidden_size=loc_hidden_size, mak_hidden_size=mak_hidden_size, 
+			m_dim=m_dim)
 
-		# # Loading well-trained model
-		# file_name = "seql60.bts128.sts64.fts1.tmx15.dts6000"
-		# tf_saver = tf.train.Saver()
-		# tf_saver.restore(sess, "resource/model/%s" % file_name)
-
-		# # Generating sequences
-		# learner_actions = np.zeros((0, seq_len))
-		# for ind in range(generate_iters):
-		# 	seqs, _ = ppg.generate(sess, pretrained=True)
-		# 	learner_actions = np.concatenate((learner_actions, seqs), axis=0)
-        #
-		# intensityplot4seqs(learner_actions, expert_actions, T=t_max, n_t=100., t0=0.,
-		#                    file_path="results/intensityplot4seqs.png")
-
-		# Training new model
-		ppg.train(sess, expert_actions)
-		tf_saver = tf.train.Saver()
-		tf_saver.save(sess, "resource/model/seql%d.bts%d.sts%d.fts%d.tmx%d.dts%d" % \
-		                    (seq_len, batch_size, state_size, feature_size, t_max, data_size))
+		ppg.train(sess, 
+			batch_size, epoches, 
+			expert_seq_t, expert_seq_l, expert_seq_m,
+			train_test_ratio = 2.)
