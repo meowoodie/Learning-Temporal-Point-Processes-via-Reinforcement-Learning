@@ -273,8 +273,9 @@ class PointProcessGenerator(object):
             kernel_bandwidth=1): 
         """reward function"""
         # concatenate each data dimension for both expert sequence and learner sequence
-        expert_seq  = tf.concat([expert_seq_t, expert_seq_l, expert_seq_m], axis=1)    # [batch_size*seq_len, t_dim+l_dim+m_dim]
-        learner_seq = tf.concat([learner_seq_t, learner_seq_l, learner_seq_m], axis=1) # [batch_size*seq_len, t_dim+l_dim+m_dim]
+        # TODO: Add mark to the sequences
+        expert_seq  = tf.concat([expert_seq_t, expert_seq_l], axis=1)    # [batch_size*seq_len, t_dim+l_dim+m_dim]
+        learner_seq = tf.concat([learner_seq_t, learner_seq_l], axis=1) # [batch_size*seq_len, t_dim+l_dim+m_dim]
         # calculate upper-half kernel matrix
         learner_learner_kernel, learner_expert_kernel = self.__kernel_matrix(learner_seq, expert_seq, kernel_bandwidth) # [batch_size*seq_len, 2*batch_size*seq_len]
         # calculate reward for each of data point in learner sequence
@@ -418,148 +419,148 @@ class PointProcessGenerator(object):
     #         self.input_seq_l: input_seq_l,
     #         self.input_seq_m: input_seq_m})
 
-if __name__ == "__main__":
-    expert_seq_t = [
-        [[ 2.2372603], 
-        [ 7.3469152],
-        [10.841639 ],
-        [11.278158 ],
-        [11.875915 ]],
+# if __name__ == "__main__":
+#     expert_seq_t = [
+#         [[ 2.2372603], 
+#         [ 7.3469152],
+#         [10.841639 ],
+#         [11.278158 ],
+#         [11.875915 ]],
 
-        [[ 4.601893 ],
-        [ 7.6262646],
-        [ 8.953828 ],
-        [11.48958  ],
-        [13.335195 ]],
+#         [[ 4.601893 ],
+#         [ 7.6262646],
+#         [ 8.953828 ],
+#         [11.48958  ],
+#         [13.335195 ]],
         
-        [[ 2.2372603], 
-        [ 7.3469152],
-        [10.841639 ],
-        [11.278158 ],
-        [11.875915 ]],
+#         [[ 2.2372603], 
+#         [ 7.3469152],
+#         [10.841639 ],
+#         [11.278158 ],
+#         [11.875915 ]],
 
-        [[ 4.601893 ],
-        [ 7.6262646],
-        [ 8.953828 ],
-        [11.48958  ],
-        [13.335195 ]],
+#         [[ 4.601893 ],
+#         [ 7.6262646],
+#         [ 8.953828 ],
+#         [11.48958  ],
+#         [13.335195 ]],
         
-        [[ 2.2372603], 
-        [ 7.3469152],
-        [10.841639 ],
-        [11.278158 ],
-        [11.875915 ]],
+#         [[ 2.2372603], 
+#         [ 7.3469152],
+#         [10.841639 ],
+#         [11.278158 ],
+#         [11.875915 ]],
 
-        [[ 4.601893 ],
-        [ 7.6262646],
-        [ 8.953828 ],
-        [11.48958  ],
-        [13.335195 ]]]
+#         [[ 4.601893 ],
+#         [ 7.6262646],
+#         [ 8.953828 ],
+#         [11.48958  ],
+#         [13.335195 ]]]
 
-    expert_seq_l = [
-        [[-9.7975151e+01,  2.7360342e+00],
-        [-5.2876039e+00, -6.6114247e-01],
-        [-7.1111503e+00, -8.5162185e-03],
-        [ 1.1980354e+01,  1.2619636e+00],
-        [ 3.5298267e+02,  5.9427624e+00]],
+#     expert_seq_l = [
+#         [[-9.7975151e+01,  2.7360342e+00],
+#         [-5.2876039e+00, -6.6114247e-01],
+#         [-7.1111503e+00, -8.5162185e-03],
+#         [ 1.1980354e+01,  1.2619636e+00],
+#         [ 3.5298267e+02,  5.9427624e+00]],
 
-        [[ 2.0113881e+03,  5.1461897e+00],
-        [ 4.9495239e+02,  5.6867313e+00],
-        [-5.8737720e+02,  1.8419909e+00],
-        [-1.5442281e+00, -1.3099791e+00],
-        [ 4.1468458e+00,  8.7737030e-01]],
+#         [[ 2.0113881e+03,  5.1461897e+00],
+#         [ 4.9495239e+02,  5.6867313e+00],
+#         [-5.8737720e+02,  1.8419909e+00],
+#         [-1.5442281e+00, -1.3099791e+00],
+#         [ 4.1468458e+00,  8.7737030e-01]],
         
-        [[-9.7975151e+01,  2.7360342e+00],
-        [-5.2876039e+00, -6.6114247e-01],
-        [-7.1111503e+00, -8.5162185e-03],
-        [ 1.1980354e+01,  1.2619636e+00],
-        [ 3.5298267e+02,  5.9427624e+00]],
+#         [[-9.7975151e+01,  2.7360342e+00],
+#         [-5.2876039e+00, -6.6114247e-01],
+#         [-7.1111503e+00, -8.5162185e-03],
+#         [ 1.1980354e+01,  1.2619636e+00],
+#         [ 3.5298267e+02,  5.9427624e+00]],
 
-        [[ 2.0113881e+03,  5.1461897e+00],
-        [ 4.9495239e+02,  5.6867313e+00],
-        [-5.8737720e+02,  1.8419909e+00],
-        [-1.5442281e+00, -1.3099791e+00],
-        [ 4.1468458e+00,  8.7737030e-01]],
+#         [[ 2.0113881e+03,  5.1461897e+00],
+#         [ 4.9495239e+02,  5.6867313e+00],
+#         [-5.8737720e+02,  1.8419909e+00],
+#         [-1.5442281e+00, -1.3099791e+00],
+#         [ 4.1468458e+00,  8.7737030e-01]],
         
-        [[-9.7975151e+01,  2.7360342e+00],
-        [-5.2876039e+00, -6.6114247e-01],
-        [-7.1111503e+00, -8.5162185e-03],
-        [ 1.1980354e+01,  1.2619636e+00],
-        [ 3.5298267e+02,  5.9427624e+00]],
+#         [[-9.7975151e+01,  2.7360342e+00],
+#         [-5.2876039e+00, -6.6114247e-01],
+#         [-7.1111503e+00, -8.5162185e-03],
+#         [ 1.1980354e+01,  1.2619636e+00],
+#         [ 3.5298267e+02,  5.9427624e+00]],
 
-        [[ 2.0113881e+03,  5.1461897e+00],
-        [ 4.9495239e+02,  5.6867313e+00],
-        [-5.8737720e+02,  1.8419909e+00],
-        [-1.5442281e+00, -1.3099791e+00],
-        [ 4.1468458e+00,  8.7737030e-01]]]
+#         [[ 2.0113881e+03,  5.1461897e+00],
+#         [ 4.9495239e+02,  5.6867313e+00],
+#         [-5.8737720e+02,  1.8419909e+00],
+#         [-1.5442281e+00, -1.3099791e+00],
+#         [ 4.1468458e+00,  8.7737030e-01]]]
     
-    expert_seq_m = [
-        [[0., 0., 1.],
-        [0., 1., 0.],
-        [0., 1., 0.],
-        [0., 1., 0.],
-        [0., 1., 0.]],
+#     expert_seq_m = [
+#         [[0., 0., 1.],
+#         [0., 1., 0.],
+#         [0., 1., 0.],
+#         [0., 1., 0.],
+#         [0., 1., 0.]],
 
-        [[1., 0., 0.],
-        [1., 0., 0.],
-        [1., 0., 0.],
-        [0., 1., 0.],
-        [0., 1., 0.]],
+#         [[1., 0., 0.],
+#         [1., 0., 0.],
+#         [1., 0., 0.],
+#         [0., 1., 0.],
+#         [0., 1., 0.]],
         
-        [[0., 0., 1.],
-        [0., 1., 0.],
-        [0., 1., 0.],
-        [0., 1., 0.],
-        [0., 1., 0.]],
+#         [[0., 0., 1.],
+#         [0., 1., 0.],
+#         [0., 1., 0.],
+#         [0., 1., 0.],
+#         [0., 1., 0.]],
 
-        [[1., 0., 0.],
-        [1., 0., 0.],
-        [1., 0., 0.],
-        [0., 1., 0.],
-        [0., 1., 0.]],
+#         [[1., 0., 0.],
+#         [1., 0., 0.],
+#         [1., 0., 0.],
+#         [0., 1., 0.],
+#         [0., 1., 0.]],
         
-        [[0., 0., 1.],
-        [0., 1., 0.],
-        [0., 1., 0.],
-        [0., 1., 0.],
-        [0., 1., 0.]],
+#         [[0., 0., 1.],
+#         [0., 1., 0.],
+#         [0., 1., 0.],
+#         [0., 1., 0.],
+#         [0., 1., 0.]],
 
-        [[1., 0., 0.],
-        [1., 0., 0.],
-        [1., 0., 0.],
-        [0., 1., 0.],
-        [0., 1., 0.]]]
+#         [[1., 0., 0.],
+#         [1., 0., 0.],
+#         [1., 0., 0.],
+#         [0., 1., 0.],
+#         [0., 1., 0.]]]
 
-    expert_seq_t, expert_seq_l, expert_seq_m = np.array(expert_seq_t), np.array(expert_seq_l), np.array(expert_seq_m)
+#     expert_seq_t, expert_seq_l, expert_seq_m = np.array(expert_seq_t), np.array(expert_seq_l), np.array(expert_seq_m)
 
-    tf.set_random_seed(1)
-    # Start training
-    with tf.Session() as sess:
-        step_size        = 5
-        lstm_hidden_size = 10
-        loc_hidden_size  = 10
-        mak_hidden_size  = 10
-        m_dim            = 3
-        batch_size       = 2
-        T                = 11.
-        epoches          = 10
+#     tf.set_random_seed(1)
+#     # Start training
+#     with tf.Session() as sess:
+#         step_size        = 5
+#         lstm_hidden_size = 10
+#         loc_hidden_size  = 10
+#         mak_hidden_size  = 10
+#         m_dim            = 3
+#         batch_size       = 2
+#         T                = 11.
+#         epoches          = 10
 
-        ppg = PointProcessGenerator(
-            T=T, seq_len=step_size, 
-            lstm_hidden_size=lstm_hidden_size, loc_hidden_size=loc_hidden_size, mak_hidden_size=mak_hidden_size, 
-            m_dim=m_dim)
+#         ppg = PointProcessGenerator(
+#             T=T, seq_len=step_size, 
+#             lstm_hidden_size=lstm_hidden_size, loc_hidden_size=loc_hidden_size, mak_hidden_size=mak_hidden_size, 
+#             m_dim=m_dim)
 
-        ppg.train(sess, 
-            batch_size, epoches, 
-            expert_seq_t, expert_seq_l, expert_seq_m,
-            train_test_ratio = 2.)
+#         ppg.train(sess, 
+#             batch_size, epoches, 
+#             expert_seq_t, expert_seq_l, expert_seq_m,
+#             train_test_ratio = 2.)
 
-        # ppg._initialize_policy_network(batch_size)
-        # # Initialize the variables (i.e. assign their default value)
-        # init = tf.global_variables_initializer()
-        # # Run the initializer
-        # sess.run(init)
-        # print(ppg.debug(sess, expert_seq_t, expert_seq_l, expert_seq_m))
+#         # ppg._initialize_policy_network(batch_size)
+#         # # Initialize the variables (i.e. assign their default value)
+#         # init = tf.global_variables_initializer()
+#         # # Run the initializer
+#         # sess.run(init)
+#         # print(ppg.debug(sess, expert_seq_t, expert_seq_l, expert_seq_m))
         
 
     

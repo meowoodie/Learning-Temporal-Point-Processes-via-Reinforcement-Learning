@@ -19,7 +19,7 @@ if __name__ == "__main__":
 	np.random.seed(0)
 
 	# data configuration
-	n_seq       = 10
+	n_seq       = 50
 	T           = 10.
 	m_dim       = 5
 
@@ -68,4 +68,4 @@ if __name__ == "__main__":
 		ppg.train(sess, 
 			batch_size, epoches, 
 			expert_seq_t, expert_seq_l, expert_seq_m,
-			train_test_ratio = 2.)
+			train_test_ratio = 4.)
