@@ -57,7 +57,7 @@ if __name__ == "__main__":
 		lstm_hidden_size = 10
 		loc_hidden_size  = 10
 		mak_hidden_size  = 10
-		batch_size       = 2
+		batch_size       = 4
 		epoches          = 10
 
 		ppg = PointProcessGenerator(

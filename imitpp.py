@@ -127,7 +127,7 @@ class CustomizedStochasticLSTM(object):
         next_m,  loglik_m = self._m(batch_size, last_state.h)  # [batch_size, m_dim], [batch_size, 1]  
         next_t = last_t + delta_t                              # [batch_size, t_dim]
         # log likelihood
-        loglik = loglik_t + loglik_l # + loglik_m # TODO: Add mark to input x
+        loglik = loglik_l # + loglik_l # + loglik_m # TODO: Add mark to input x
         # input of LSTM
         x      = tf.concat([next_t, next_l], axis=1) # TODO: Add mark to input x
         # one step rnn structure
@@ -138,30 +138,40 @@ class CustomizedStochasticLSTM(object):
 
     def _dt(self, batch_size, hidden_state):
         """Sampling time interval given hidden state of LSTM"""
-        theta_h = tf.nn.elu(tf.matmul(hidden_state, self.Wt) + self.bt) + 1                         # [batch_size, t_dim]
+        theta_h = tf.nn.elu(tf.matmul(hidden_state, self.Wt) + self.bt) + 1                         # [batch_size, t_dim=1]
         # reparameterization trick for sampling action from exponential distribution
-        delta_t = - tf.log(tf.random_uniform([batch_size, self.t_dim], dtype=tf.float32)) / theta_h # [batch_size, t_dim]
+        delta_t = - tf.log(tf.random_uniform([batch_size, self.t_dim], dtype=tf.float32)) / theta_h # [batch_size, t_dim=1]
         # log likelihood
         loglik  = - tf.multiply(theta_h, delta_t) + tf.log(theta_h)                                 # [batch_size, 1]
-        return delta_t, loglik 
+        return delta_t, loglik
 
     def _l(self, batch_size, hidden_state):
         """Sampling location shifts given hidden state of LSTM"""
         dense_feature = tf.nn.relu(tf.matmul(hidden_state, self.Wl0)) + self.bl0  # [batch_size, loc_hidden_size]
         dense_feature = tf.matmul(dense_feature, self.Wl1) + self.bl1             # [batch_size, loc_param_size]
         # 5 params that determine the distribution of location shifts with shape [batch_size]
-        mu0     = tf.reshape(dense_feature[:, 0], [batch_size, 1]) 
-        mu1     = tf.reshape(dense_feature[:, 1], [batch_size, 1])
-        sigma11 = tf.reshape(tf.exp(dense_feature[:, 2]), [batch_size, 1])
-        sigma22 = tf.reshape(tf.exp(dense_feature[:, 3]), [batch_size, 1])
-        sigma12 = tf.reshape(dense_feature[:, 4], [batch_size, 1])
+        mu0 = tf.reshape(dense_feature[:, 0], [batch_size, 1]) 
+        mu1 = tf.reshape(dense_feature[:, 1], [batch_size, 1])
+        # construct positive definite and symmetrical matrix as covariance matrix
+        A11 = tf.expand_dims(tf.reshape(dense_feature[:, 2], [batch_size, 1]), -1) # [batch_size, 1, 1]
+        A22 = tf.expand_dims(tf.reshape(dense_feature[:, 3], [batch_size, 1]), -1) # [batch_size, 1, 1]
+        A21 = tf.expand_dims(tf.reshape(dense_feature[:, 4], [batch_size, 1]), -1) # [batch_size, 1, 1]
+        A12 = tf.zeros([batch_size, 1, 1])                                         # [batch_size, 1, 1]
+        A1  = tf.concat([A11, A12], axis=2) # [batch_size, 1, 2]
+        A2  = tf.concat([A21, A22], axis=2) # [batch_size, 1, 2]
+        A   = tf.concat([A1, A2], axis=1)   # [batch_size, 2, 2]
+        # sigma = A * A^T with shape [batch_size, 2, 2]
+        sigma   = tf.scan(lambda a, x: tf.matmul(x, tf.transpose(x)), A) # [batch_size, 2, 2]
+        sigma11 = tf.expand_dims(sigma[:, 0, 0], -1)                     # [batch_size, 1]
+        sigma22 = tf.expand_dims(sigma[:, 1, 1], -1)                     # [batch_size, 1]
+        sigma12 = tf.expand_dims(sigma[:, 0, 1], -1)                     # [batch_size, 1]
         # random variable for generating locaiton
         rv0 = tf.random_normal([batch_size, 1])
         rv1 = tf.random_normal([batch_size, 1])
         # location x and y
-        x = mu0 + tf.multiply(sigma11, rv0) + tf.multiply(sigma12, rv1)
-        y = mu1 + tf.multiply(sigma12, rv0) + tf.multiply(sigma22, rv1)
-        l = tf.concat([x, y], axis=1) # [batch_size, 2]
+        x = mu0 + tf.multiply(sigma11, rv0) + tf.multiply(sigma12, rv1) # [batch_size, 1]
+        y = mu1 + tf.multiply(sigma12, rv0) + tf.multiply(sigma22, rv1) # [batch_size, 1]
+        l = tf.concat([x, y], axis=1)                                   # [batch_size, 2]
         # log likelihood
         sigma1 = tf.sqrt(tf.square(sigma11) + tf.square(sigma12))
         sigma2 = tf.sqrt(tf.square(sigma12) + tf.square(sigma22))
@@ -170,8 +180,9 @@ class CustomizedStochasticLSTM(object):
         z   = tf.square(x - mu0) / tf.square(sigma1) \
             - 2 * tf.multiply(rho, tf.multiply(x - mu0, y - mu1)) / tf.multiply(sigma1, sigma2) \
             + tf.square(y - mu1) / tf.square(sigma2)
-        loglik = -z / 2 / (1 - tf.square(rho)) - tf.log(
-            2 * np.pi * tf.multiply(tf.multiply(sigma1, sigma2), tf.sqrt(1 - tf.square(rho))))
+        # loglik = - z / 2 / (1 - tf.square(rho)) \
+        #          - tf.log(2 * np.pi * tf.multiply(tf.multiply(sigma1, sigma2), tf.sqrt(1 - tf.square(rho))))
+        loglik = - z / 2 / (1 - tf.square(rho) + 1e-15)
         return l, loglik
     
     def _m(self, batch_size, hidden_state):
@@ -232,6 +243,7 @@ class PointProcessGenerator(object):
         learner_seq_t, learner_seq_l, learner_seq_m = self.cslstm.seq_t, self.cslstm.seq_l, self.cslstm.seq_m
         # log likelihood
         learner_seq_loglik = self.cslstm.seq_loglik
+        self.test = learner_seq_loglik
         
         # sequences preprocessing
         # - truncate sequences after time T
@@ -258,14 +270,13 @@ class PointProcessGenerator(object):
         # calculate average rewards
         reward = self._reward(batch_size, \
                               expert_seq_t,  expert_seq_l,  expert_seq_m, \
-                              learner_seq_t, learner_seq_l, learner_seq_m) # [x*seq_len, 1]
+                              learner_seq_t, learner_seq_l, learner_seq_m) # [batch_size*seq_len, 1]
 
         # cost and optimizer
         self.cost      = tf.reduce_sum(tf.multiply(reward, learner_seq_loglik), axis=0) / batch_size
         global_step    = tf.Variable(0, trainable=False)
         learning_rate  = tf.train.exponential_decay(starter_learning_rate, global_step, decay_step, decay_rate, staircase=True)
         self.optimizer = tf.train.AdamOptimizer(learning_rate, beta1=0.6, beta2=0.9).minimize(self.cost, global_step=global_step)
-        # self.test = self.cost
 
     def _reward(self, batch_size,
             expert_seq_t, expert_seq_l, expert_seq_m,    # expert sequences
@@ -349,6 +360,13 @@ class PointProcessGenerator(object):
                     self.input_seq_t: batch_test_expert_t,
                     self.input_seq_l: batch_test_expert_l,
                     self.input_seq_m: batch_test_expert_m})
+
+                # test = sess.run(self.test, feed_dict={
+                #     self.input_seq_t: batch_test_expert_t,
+                #     self.input_seq_l: batch_test_expert_l,
+                #     self.input_seq_m: batch_test_expert_m})
+                # print(test)
+
                 # record cost for each batch
                 avg_train_cost.append(train_cost)
                 avg_test_cost.append(test_cost)
@@ -358,7 +376,8 @@ class PointProcessGenerator(object):
             print('[%s] Epoch %d (n_train_batches=%d, batch_size=%d)' % (arrow.now(), epoch, n_batches, batch_size), file=sys.stderr)
             print('[%s] Training cost:\t%f' % (arrow.now(), avg_train_cost), file=sys.stderr)
             print('[%s] Testing cost:\t%f' % (arrow.now(), avg_test_cost), file=sys.stderr)
-        
+            # break
+
     @staticmethod
     def __truncate_by_T(trunc_seq, T, seq_t):
         """masking time, location and mark sequences for the entries before the maximum time T."""
