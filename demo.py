@@ -20,7 +20,7 @@ if __name__ == "__main__":
 
 	# data configuration
 	n_seq       = 50
-	T           = 10.
+	T           = 5.
 	m_dim       = 5
 
 	# generating parameters

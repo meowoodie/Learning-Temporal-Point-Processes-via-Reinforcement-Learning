@@ -39,6 +39,8 @@ class CustomizedStochasticLSTM(object):
         - mak_hidden_size:  size of hidden feature of mark
         - m_dim:            number of categories of marks
         """
+        INIT_PARAM_RATIO = 1e-5
+        
         # data dimension
         self.t_dim = 1     # by default
         self.m_dim = m_dim # number of categories for the marks
@@ -52,18 +54,18 @@ class CustomizedStochasticLSTM(object):
 
         # define learning weights
         # - time weights
-        self.Wt  = tf.Variable(tf.random_normal([self.lstm_hidden_size, self.t_dim]))
-        self.bt  = tf.Variable(tf.random_normal([self.t_dim]))
+        self.Wt  = tf.Variable(INIT_PARAM_RATIO * tf.random_normal([self.lstm_hidden_size, self.t_dim]))
+        self.bt  = tf.Variable(INIT_PARAM_RATIO * tf.random_normal([self.t_dim]))
         # - location weights
-        self.Wl0 = tf.Variable(tf.random_normal([self.lstm_hidden_size, self.loc_hidden_size]))
-        self.bl0 = tf.Variable(tf.random_normal([self.loc_hidden_size]))
-        self.Wl1 = tf.Variable(tf.random_normal([self.loc_hidden_size, self.loc_param_size]))
-        self.bl1 = tf.Variable(tf.random_normal([self.loc_param_size]))
+        self.Wl0 = tf.Variable(INIT_PARAM_RATIO * tf.random_normal([self.lstm_hidden_size, self.loc_hidden_size]))
+        self.bl0 = tf.Variable(INIT_PARAM_RATIO * tf.random_normal([self.loc_hidden_size]))
+        self.Wl1 = tf.Variable(INIT_PARAM_RATIO * tf.random_normal([self.loc_hidden_size, self.loc_param_size]))
+        self.bl1 = tf.Variable(INIT_PARAM_RATIO * tf.random_normal([self.loc_param_size]))
         # - mark weights
-        self.Wm0 = tf.Variable(tf.random_normal([self.lstm_hidden_size, self.mak_hidden_size]))
-        self.bm0 = tf.Variable(tf.random_normal([self.mak_hidden_size]))
-        self.Wm1 = tf.Variable(tf.random_normal([self.mak_hidden_size, self.m_dim]))
-        self.bm1 = tf.Variable(tf.random_normal([self.m_dim]))
+        self.Wm0 = tf.Variable(INIT_PARAM_RATIO * tf.random_normal([self.lstm_hidden_size, self.mak_hidden_size]))
+        self.bm0 = tf.Variable(INIT_PARAM_RATIO * tf.random_normal([self.mak_hidden_size]))
+        self.Wm1 = tf.Variable(INIT_PARAM_RATIO * tf.random_normal([self.mak_hidden_size, self.m_dim]))
+        self.bm1 = tf.Variable(INIT_PARAM_RATIO * tf.random_normal([self.m_dim]))
 
     def initialize_network(self, batch_size):
         """Create a new network for training purpose, where the LSTM is at the zero state"""
@@ -127,7 +129,7 @@ class CustomizedStochasticLSTM(object):
         next_m,  loglik_m = self._m(batch_size, last_state.h)  # [batch_size, m_dim], [batch_size, 1]  
         next_t = last_t + delta_t                              # [batch_size, t_dim]
         # log likelihood
-        loglik = loglik_l # + loglik_l # + loglik_m # TODO: Add mark to input x
+        loglik = loglik_t + loglik_l # + loglik_m # TODO: Add mark to input x
         # input of LSTM
         x      = tf.concat([next_t, next_l], axis=1) # TODO: Add mark to input x
         # one step rnn structure
@@ -180,9 +182,8 @@ class CustomizedStochasticLSTM(object):
         z   = tf.square(x - mu0) / tf.square(sigma1) \
             - 2 * tf.multiply(rho, tf.multiply(x - mu0, y - mu1)) / tf.multiply(sigma1, sigma2) \
             + tf.square(y - mu1) / tf.square(sigma2)
-        # loglik = - z / 2 / (1 - tf.square(rho)) \
-        #          - tf.log(2 * np.pi * tf.multiply(tf.multiply(sigma1, sigma2), tf.sqrt(1 - tf.square(rho))))
-        loglik = - z / 2 / (1 - tf.square(rho) + 1e-15)
+        loglik = - z / 2 / (1 - tf.square(rho)) \
+                 - tf.log(2 * np.pi * tf.multiply(tf.multiply(sigma1, sigma2), tf.sqrt(1 - tf.square(rho))))
         return l, loglik
     
     def _m(self, batch_size, hidden_state):
@@ -243,7 +244,7 @@ class PointProcessGenerator(object):
         learner_seq_t, learner_seq_l, learner_seq_m = self.cslstm.seq_t, self.cslstm.seq_l, self.cslstm.seq_m
         # log likelihood
         learner_seq_loglik = self.cslstm.seq_loglik
-        self.test = learner_seq_loglik
+        # self.test = learner_seq_loglik
         
         # sequences preprocessing
         # - truncate sequences after time T
