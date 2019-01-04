@@ -379,6 +379,7 @@ class PointProcessGenerator(object):
             expert_seq_l,          # [n, seq_len, 2]
             expert_seq_m,          # [n, seq_len, m_dim]
             train_test_ratio = 9., # n_train / n_test
+            trainplot=True,        # plot the change of intensity over epoches
             pretrained=False):
         """Train the point process generator given expert sequences."""
         # check the consistency of the shape of the expert sequences
@@ -403,7 +404,8 @@ class PointProcessGenerator(object):
         # - check if test data size is large enough (> batch_size)
         assert n_test >= batch_size, "test data size %d is less than batch size %d." % (n_test, batch_size)
         
-        ppim = utils.PointProcessIntensityMeter(self.T, batch_size)
+        if trainplot:
+            ppim = utils.PointProcessIntensityMeter(self.T, batch_size)
 
         # training over epoches
         for epoch in range(epoches):
@@ -442,23 +444,20 @@ class PointProcessGenerator(object):
                     self.input_seq_t: batch_test_expert_t,
                     self.input_seq_l: batch_test_expert_l,
                     self.input_seq_m: batch_test_expert_m})
-
-                # test = sess.run(self.test, feed_dict={
-                #     self.input_seq_t: batch_test_expert_t,
-                #     self.input_seq_l: batch_test_expert_l,
-                #     self.input_seq_m: batch_test_expert_m})
-                # print(test)
-
                 # record cost for each batch
                 avg_train_cost.append(train_cost)
                 avg_test_cost.append(test_cost)
 
-            # update intensity plot
-            learner_seq_t = sess.run(self.cslstm.seq_t, feed_dict={
-                self.input_seq_t: batch_test_expert_t,
-                self.input_seq_l: batch_test_expert_l,
-                self.input_seq_m: batch_test_expert_m})
-            ppim.update_time_intensity(learner_seq_t, batch_train_expert_t)
+            if trainplot:
+                # update intensity plot
+                learner_seq_t, learner_seq_l = sess.run(
+                    [self.cslstm.seq_t, self.cslstm.seq_l], 
+                    feed_dict={
+                        self.input_seq_t: batch_test_expert_t,
+                        self.input_seq_l: batch_test_expert_l,
+                        self.input_seq_m: batch_test_expert_m})
+                ppim.update_time_intensity(batch_train_expert_t, learner_seq_t)
+                ppim.update_location_intensity(batch_train_expert_l, learner_seq_l)
 
             # training log output
             avg_train_cost = np.mean(avg_train_cost)
