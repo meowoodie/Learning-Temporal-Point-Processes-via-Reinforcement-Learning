@@ -20,8 +20,8 @@ import utils
 import random
 import numpy as np
 import tensorflow as tf
-from scipy import stats
 import matplotlib.pyplot as plt
+from scipy import stats
 
 class CustomizedStochasticLSTM(object):
     """
@@ -103,10 +103,10 @@ class CustomizedStochasticLSTM(object):
             seq_loglik.append(loglik) # record log likelihood  
             last_t          = t       # reset last_t
             last_lstm_state = state   # reset last_lstm_state
-        seq_t      = tf.stack(seq_t, axis=1)
-        seq_l      = tf.stack(seq_l, axis=1) 
-        seq_m      = tf.stack(seq_m, axis=1)
-        seq_loglik = tf.stack(seq_loglik, axis=1)
+        seq_t      = tf.stack(seq_t, axis=1)      # [batch_size, step_size, t_dim]
+        seq_l      = tf.stack(seq_l, axis=1)      # [batch_size, step_size, 2]
+        seq_m      = tf.stack(seq_m, axis=1)      # [batch_size, step_size, m_dim]
+        seq_loglik = tf.stack(seq_loglik, axis=1) # [batch_size, step_size, 1]
         return seq_t, seq_l, seq_m, seq_loglik, state
 
     def _customized_lstm_cell(self, batch_size, 
@@ -129,7 +129,7 @@ class CustomizedStochasticLSTM(object):
         next_m,  loglik_m = self._m(batch_size, last_state.h)  # [batch_size, m_dim], [batch_size, 1]  
         next_t = last_t + delta_t                              # [batch_size, t_dim]
         # log likelihood
-        loglik = loglik_t + loglik_l # + loglik_m # TODO: Add mark to input x
+        loglik = loglik_t + loglik_l # + loglik_m    # TODO: Add mark to input x
         # input of LSTM
         x      = tf.concat([next_t, next_l], axis=1) # TODO: Add mark to input x
         # one step rnn structure
@@ -211,6 +211,12 @@ class PointProcessGenerator(object):
     def __init__(self, T, seq_len, lstm_hidden_size, loc_hidden_size, mak_hidden_size, m_dim):
         """
         Params:
+        - T:                the maximum time of the sequences
+        - seq_len:          the length of the sequences
+        - lstm_hidden_size: size of hidden state of the LSTM
+        - loc_hidden_size:  size of hidden feature of location
+        - mak_hidden_size:  size of hidden feature of mark
+        - m_dim:            number of categories of marks
         """
         # model hyper-parameters
         self.T       = T                # maximum time
@@ -244,19 +250,23 @@ class PointProcessGenerator(object):
         learner_seq_t, learner_seq_l, learner_seq_m = self.cslstm.seq_t, self.cslstm.seq_l, self.cslstm.seq_m
         # log likelihood
         learner_seq_loglik = self.cslstm.seq_loglik
-        # self.test = learner_seq_loglik
+
+        # getting training time window (t_0 = 0, T = self.T by default)
+        learner_seq_t = self.__truncate_by_T(learner_seq_t, seq_t=learner_seq_t, T=self.T)
+        t_0, T        = self._training_time_window(learner_seq_t)
+        # self.test = T
         
         # sequences preprocessing
         # - truncate sequences after time T
         expert_seq_t, expert_seq_l, expert_seq_m, = \
-            self.__truncate_by_T(self.input_seq_t, T=self.T, seq_t=self.input_seq_t), \
-            self.__truncate_by_T(self.input_seq_l, T=self.T, seq_t=self.input_seq_t), \
-            self.__truncate_by_T(self.input_seq_m, T=self.T, seq_t=self.input_seq_t)
+            self.__truncate_by_T(self.input_seq_t, seq_t=self.input_seq_t, T=T, t_0=t_0), \
+            self.__truncate_by_T(self.input_seq_l, seq_t=self.input_seq_t, T=T, t_0=t_0), \
+            self.__truncate_by_T(self.input_seq_m, seq_t=self.input_seq_t, T=T, t_0=t_0)
         learner_seq_t, learner_seq_l, learner_seq_m, learner_seq_loglik = \
-            self.__truncate_by_T(learner_seq_t, T=self.T, seq_t=self.input_seq_t), \
-            self.__truncate_by_T(learner_seq_l, T=self.T, seq_t=self.input_seq_t), \
-            self.__truncate_by_T(learner_seq_m, T=self.T, seq_t=self.input_seq_t), \
-            self.__truncate_by_T(learner_seq_loglik, T=self.T, seq_t=self.input_seq_t)
+            self.__truncate_by_T(learner_seq_t, seq_t=learner_seq_t, T=T, t_0=t_0), \
+            self.__truncate_by_T(learner_seq_l, seq_t=learner_seq_t, T=T, t_0=t_0), \
+            self.__truncate_by_T(learner_seq_m, seq_t=learner_seq_t, T=T, t_0=t_0), \
+            self.__truncate_by_T(learner_seq_loglik, seq_t=learner_seq_t, T=T, t_0=t_0)
         # - concatenate batches in the sequences
         expert_seq_t,  expert_seq_l,  expert_seq_m  = \
             self.__concatenate_batch(expert_seq_t), \
@@ -279,6 +289,20 @@ class PointProcessGenerator(object):
         learning_rate  = tf.train.exponential_decay(starter_learning_rate, global_step, decay_step, decay_rate, staircase=True)
         self.optimizer = tf.train.AdamOptimizer(learning_rate, beta1=0.6, beta2=0.9).minimize(self.cost, global_step=global_step)
 
+    def _training_time_window(self, learner_seq_t):
+        """
+        Time window for the purpose of training. The model only fits a specific segment of the expert sequence
+        indicated by 'training_time_window'. This function will return the start time (t_0) and end time (T) of 
+        the segment.
+
+        Policy 1:
+        t_0 = 0; T = mean(max(learner_seq_t, axis=0))
+        """
+        # policy 1
+        t_0 = 0
+        T   = tf.reduce_max(learner_seq_t) # tf.reduce_mean(tf.reduce_max(learner_seq_t, axis=0))
+        return t_0, T
+
     def _reward(self, batch_size,
             expert_seq_t, expert_seq_l, expert_seq_m,    # expert sequences
             learner_seq_t, learner_seq_l, learner_seq_m, # learner sequences
@@ -295,6 +319,60 @@ class PointProcessGenerator(object):
         emp_learner_mean = tf.reduce_sum(learner_expert_kernel, axis=1) / batch_size # batch_size*seq_len
         return tf.expand_dims(emp_expert_mean - emp_learner_mean, -1) # [batch_size*seq_len, 1]
 
+    @staticmethod
+    def __truncate_by_T(trunc_seq, seq_t, T, t_0=0):
+        """Masking time, location and mark sequences for the entries before the maximum time T."""
+        # data dimension of seq
+        d = tf.shape(trunc_seq)[-1]
+        # squeeze since each time entry is a list with a single element. 
+        array_t = tf.squeeze(seq_t, squeeze_dims=[2]) # [batch_size, seq_len]
+        # get basic mask where 0 if t > T else 1
+        mask_t  = tf.expand_dims(tf.multiply(
+            tf.cast(array_t < T, tf.float32),
+            tf.cast(array_t > t_0, tf.float32)), -1)  # [batch_size, seq_len, 1] 
+        mask    = tf.tile(mask_t, [1, 1, d])          # [batch_size, seq_len, l_dim]
+        # return masked sequences
+        return tf.multiply(trunc_seq, mask)
+    
+    @staticmethod
+    def __concatenate_batch(seqs):
+        """Concatenate each batch of the sequences into a single sequence."""
+        array_seq = tf.unstack(seqs, axis=0)     # [batch_size, seq_len, data_dim]
+        seq       = tf.concat(array_seq, axis=0) # [batch_size*seq_len, data_dim]
+        return seq
+
+    @staticmethod
+    def __kernel_matrix(learner_seq, expert_seq, kernel_bandwidth):
+        """
+        Construct kernel matrix based on learn sequence and expert sequence, each entry of the matrix 
+        is the distance between two data points in learner_seq or expert_seq. return two matrix, left_mat 
+        is the distances between learn sequence and learn sequence, right_mat is the distances between 
+        learn sequence and expert sequence.
+        """
+        # helper function for getting nonzero 1D mask for a 2D sequence
+        def nonzero_mask(seq):
+            # data dimension
+            d    = tf.shape(seq)[-1] 
+            # 2D seq mask: 0 for zero, 1 for nonzero
+            mask = tf.cast(seq > 0, tf.float32)                    # [seq_len, data_dim]
+            mask = tf.expand_dims(tf.reduce_sum(mask, axis=1), -1) # [seq_len, 1]
+            mask = tf.cast(mask > 0, tf.float32)                   # [seq_len, 1]
+            return mask
+        # calculate l2 distances
+        learner_learner_mat = utils.l2_norm(learner_seq, learner_seq) # [batch_size*seq_len, batch_size*seq_len]
+        learner_expert_mat  = utils.l2_norm(learner_seq, expert_seq)  # [batch_size*seq_len, batch_size*seq_len]
+        # exponential kernel
+        learner_learner_mat = tf.exp(-tf.square(learner_learner_mat) / kernel_bandwidth)
+        learner_expert_mat  = tf.exp(-tf.square(learner_expert_mat) / kernel_bandwidth)
+        # remove invalid entries
+        learner_seq_mask = nonzero_mask(learner_seq)
+        expert_seq_mask  = nonzero_mask(expert_seq)
+        learner_learner_mat_mask = tf.matmul(learner_seq_mask, tf.transpose(expert_seq_mask))
+        learner_expert_mat_mask  = tf.matmul(learner_seq_mask, tf.transpose(expert_seq_mask))
+        learner_learner_mat = tf.multiply(learner_learner_mat, learner_learner_mat_mask)
+        learner_expert_mat  = tf.multiply(learner_expert_mat, learner_expert_mat_mask)
+        return learner_learner_mat, learner_expert_mat
+
     def train(self, sess, batch_size, 
             epoches,               # number of epoches (how many times is the entire dataset going to be trained)
             expert_seq_t,          # [n, seq_len, 1]
@@ -302,7 +380,8 @@ class PointProcessGenerator(object):
             expert_seq_m,          # [n, seq_len, m_dim]
             train_test_ratio = 9., # n_train / n_test
             pretrained=False):
-        """train"""
+        """Train the point process generator given expert sequences."""
+        # check the consistency of the shape of the expert sequences
         assert expert_seq_t.shape[:-1] == expert_seq_l.shape[:-1] == expert_seq_m.shape[:-1], \
             "inconsistant 'number of sequences' or 'sequence length' of input expert sequences"
 
@@ -377,210 +456,3 @@ class PointProcessGenerator(object):
             print('[%s] Epoch %d (n_train_batches=%d, batch_size=%d)' % (arrow.now(), epoch, n_batches, batch_size), file=sys.stderr)
             print('[%s] Training cost:\t%f' % (arrow.now(), avg_train_cost), file=sys.stderr)
             print('[%s] Testing cost:\t%f' % (arrow.now(), avg_test_cost), file=sys.stderr)
-            # break
-
-    @staticmethod
-    def __truncate_by_T(trunc_seq, T, seq_t):
-        """masking time, location and mark sequences for the entries before the maximum time T."""
-        # data dimension of seq
-        d = tf.shape(trunc_seq)[-1]
-        # squeeze since each time entry is a list with a single element. 
-        array_t = tf.squeeze(seq_t, squeeze_dims=[2]) # [batch_size, seq_len]
-        # get basic mask where 0 if t > T else 1
-        mask_t  = tf.expand_dims(tf.multiply(
-            tf.cast(array_t < T, tf.float32),
-            tf.cast(array_t > 0, tf.float32)), -1)    # [batch_size, seq_len, 1] 
-        mask    = tf.tile(mask_t, [1, 1, d])          # [batch_size, seq_len, l_dim]
-        # return masked sequences
-        return tf.multiply(trunc_seq, mask)
-    
-    @staticmethod
-    def __concatenate_batch(seqs):
-        """concatenate each batch of the sequences into a single sequence."""
-        array_seq = tf.unstack(seqs, axis=0)     # [batch_size, seq_len, data_dim]
-        seq       = tf.concat(array_seq, axis=0) # [batch_size*seq_len, data_dim]
-        return seq
-
-    @staticmethod
-    def __kernel_matrix(learner_seq, expert_seq, kernel_bandwidth):
-        """
-        construct kernel matrix based on learn sequence and expert sequence, each entry of the matrix 
-        is the distance between two data points in learner_seq or expert_seq. return two matrix, left_mat 
-        is the distances between learn sequence and learn sequence, right_mat is the distances between 
-        learn sequence and expert sequence.
-        """
-        # helper function for getting nonzero 1D mask for a 2D sequence
-        def nonzero_mask(seq):
-            # data dimension
-            d    = tf.shape(seq)[-1] 
-            # 2D seq mask: 0 for zero, 1 for nonzero
-            mask = tf.cast(seq > 0, tf.float32)                    # [seq_len, data_dim]
-            mask = tf.expand_dims(tf.reduce_sum(mask, axis=1), -1) # [seq_len, 1]
-            mask = tf.cast(mask > 0, tf.float32)                   # [seq_len, 1]
-            return mask
-        # calculate l2 distances
-        learner_learner_mat = utils.l2_norm(learner_seq, learner_seq) # [batch_size*seq_len, batch_size*seq_len]
-        learner_expert_mat  = utils.l2_norm(learner_seq, expert_seq)  # [batch_size*seq_len, batch_size*seq_len]
-        # exponential kernel
-        learner_learner_mat = tf.exp(-tf.square(learner_learner_mat) / kernel_bandwidth)
-        learner_expert_mat  = tf.exp(-tf.square(learner_expert_mat) / kernel_bandwidth)
-        # remove invalid entries
-        learner_seq_mask = nonzero_mask(learner_seq)
-        expert_seq_mask  = nonzero_mask(expert_seq)
-        learner_learner_mat_mask = tf.matmul(learner_seq_mask, tf.transpose(expert_seq_mask))
-        learner_expert_mat_mask  = tf.matmul(learner_seq_mask, tf.transpose(expert_seq_mask))
-        learner_learner_mat = tf.multiply(learner_learner_mat, learner_learner_mat_mask)
-        learner_expert_mat  = tf.multiply(learner_expert_mat, learner_expert_mat_mask)
-        return learner_learner_mat, learner_expert_mat
-
-    # def debug(self, sess, input_seq_t, input_seq_l, input_seq_m):
-    #     return sess.run(self.test, feed_dict={
-    #         self.input_seq_t: input_seq_t,
-    #         self.input_seq_l: input_seq_l,
-    #         self.input_seq_m: input_seq_m})
-
-# if __name__ == "__main__":
-#     expert_seq_t = [
-#         [[ 2.2372603], 
-#         [ 7.3469152],
-#         [10.841639 ],
-#         [11.278158 ],
-#         [11.875915 ]],
-
-#         [[ 4.601893 ],
-#         [ 7.6262646],
-#         [ 8.953828 ],
-#         [11.48958  ],
-#         [13.335195 ]],
-        
-#         [[ 2.2372603], 
-#         [ 7.3469152],
-#         [10.841639 ],
-#         [11.278158 ],
-#         [11.875915 ]],
-
-#         [[ 4.601893 ],
-#         [ 7.6262646],
-#         [ 8.953828 ],
-#         [11.48958  ],
-#         [13.335195 ]],
-        
-#         [[ 2.2372603], 
-#         [ 7.3469152],
-#         [10.841639 ],
-#         [11.278158 ],
-#         [11.875915 ]],
-
-#         [[ 4.601893 ],
-#         [ 7.6262646],
-#         [ 8.953828 ],
-#         [11.48958  ],
-#         [13.335195 ]]]
-
-#     expert_seq_l = [
-#         [[-9.7975151e+01,  2.7360342e+00],
-#         [-5.2876039e+00, -6.6114247e-01],
-#         [-7.1111503e+00, -8.5162185e-03],
-#         [ 1.1980354e+01,  1.2619636e+00],
-#         [ 3.5298267e+02,  5.9427624e+00]],
-
-#         [[ 2.0113881e+03,  5.1461897e+00],
-#         [ 4.9495239e+02,  5.6867313e+00],
-#         [-5.8737720e+02,  1.8419909e+00],
-#         [-1.5442281e+00, -1.3099791e+00],
-#         [ 4.1468458e+00,  8.7737030e-01]],
-        
-#         [[-9.7975151e+01,  2.7360342e+00],
-#         [-5.2876039e+00, -6.6114247e-01],
-#         [-7.1111503e+00, -8.5162185e-03],
-#         [ 1.1980354e+01,  1.2619636e+00],
-#         [ 3.5298267e+02,  5.9427624e+00]],
-
-#         [[ 2.0113881e+03,  5.1461897e+00],
-#         [ 4.9495239e+02,  5.6867313e+00],
-#         [-5.8737720e+02,  1.8419909e+00],
-#         [-1.5442281e+00, -1.3099791e+00],
-#         [ 4.1468458e+00,  8.7737030e-01]],
-        
-#         [[-9.7975151e+01,  2.7360342e+00],
-#         [-5.2876039e+00, -6.6114247e-01],
-#         [-7.1111503e+00, -8.5162185e-03],
-#         [ 1.1980354e+01,  1.2619636e+00],
-#         [ 3.5298267e+02,  5.9427624e+00]],
-
-#         [[ 2.0113881e+03,  5.1461897e+00],
-#         [ 4.9495239e+02,  5.6867313e+00],
-#         [-5.8737720e+02,  1.8419909e+00],
-#         [-1.5442281e+00, -1.3099791e+00],
-#         [ 4.1468458e+00,  8.7737030e-01]]]
-    
-#     expert_seq_m = [
-#         [[0., 0., 1.],
-#         [0., 1., 0.],
-#         [0., 1., 0.],
-#         [0., 1., 0.],
-#         [0., 1., 0.]],
-
-#         [[1., 0., 0.],
-#         [1., 0., 0.],
-#         [1., 0., 0.],
-#         [0., 1., 0.],
-#         [0., 1., 0.]],
-        
-#         [[0., 0., 1.],
-#         [0., 1., 0.],
-#         [0., 1., 0.],
-#         [0., 1., 0.],
-#         [0., 1., 0.]],
-
-#         [[1., 0., 0.],
-#         [1., 0., 0.],
-#         [1., 0., 0.],
-#         [0., 1., 0.],
-#         [0., 1., 0.]],
-        
-#         [[0., 0., 1.],
-#         [0., 1., 0.],
-#         [0., 1., 0.],
-#         [0., 1., 0.],
-#         [0., 1., 0.]],
-
-#         [[1., 0., 0.],
-#         [1., 0., 0.],
-#         [1., 0., 0.],
-#         [0., 1., 0.],
-#         [0., 1., 0.]]]
-
-#     expert_seq_t, expert_seq_l, expert_seq_m = np.array(expert_seq_t), np.array(expert_seq_l), np.array(expert_seq_m)
-
-#     tf.set_random_seed(1)
-#     # Start training
-#     with tf.Session() as sess:
-#         step_size        = 5
-#         lstm_hidden_size = 10
-#         loc_hidden_size  = 10
-#         mak_hidden_size  = 10
-#         m_dim            = 3
-#         batch_size       = 2
-#         T                = 11.
-#         epoches          = 10
-
-#         ppg = PointProcessGenerator(
-#             T=T, seq_len=step_size, 
-#             lstm_hidden_size=lstm_hidden_size, loc_hidden_size=loc_hidden_size, mak_hidden_size=mak_hidden_size, 
-#             m_dim=m_dim)
-
-#         ppg.train(sess, 
-#             batch_size, epoches, 
-#             expert_seq_t, expert_seq_l, expert_seq_m,
-#             train_test_ratio = 2.)
-
-#         # ppg._initialize_policy_network(batch_size)
-#         # # Initialize the variables (i.e. assign their default value)
-#         # init = tf.global_variables_initializer()
-#         # # Run the initializer
-#         # sess.run(init)
-#         # print(ppg.debug(sess, expert_seq_t, expert_seq_l, expert_seq_m))
-        
-
-    
