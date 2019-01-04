@@ -403,6 +403,8 @@ class PointProcessGenerator(object):
         # - check if test data size is large enough (> batch_size)
         assert n_test >= batch_size, "test data size %d is less than batch size %d." % (n_test, batch_size)
         
+        ppim = utils.PointProcessIntensityMeter(self.T, batch_size)
+
         # training over epoches
         for epoch in range(epoches):
             # shuffle indices of the training samples
@@ -450,6 +452,14 @@ class PointProcessGenerator(object):
                 # record cost for each batch
                 avg_train_cost.append(train_cost)
                 avg_test_cost.append(test_cost)
+
+            # update intensity plot
+            learner_seq_t = sess.run(self.cslstm.seq_t, feed_dict={
+                self.input_seq_t: batch_test_expert_t,
+                self.input_seq_l: batch_test_expert_l,
+                self.input_seq_m: batch_test_expert_m})
+            ppim.update_time_intensity(learner_seq_t, batch_train_expert_t)
+
             # training log output
             avg_train_cost = np.mean(avg_train_cost)
             avg_test_cost  = np.mean(avg_test_cost)
