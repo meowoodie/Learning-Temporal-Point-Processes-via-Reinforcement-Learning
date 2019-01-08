@@ -250,9 +250,8 @@ class PointProcessGenerator(object):
         learner_seq_t, learner_seq_l, learner_seq_m = self.cslstm.seq_t, self.cslstm.seq_l, self.cslstm.seq_m
         # log likelihood
         learner_seq_loglik = self.cslstm.seq_loglik
-
         # getting training time window (t_0 = 0, T = self.T by default)
-        t0, T = self._training_time_window(learner_seq_t)
+        t0, T = 0, self.T # self._training_time_window(learner_seq_t)
 
         # concatenate batches in the sequences
         expert_seq_t,  expert_seq_l,  expert_seq_m  = \
@@ -286,8 +285,8 @@ class PointProcessGenerator(object):
         t_0 = 0; T = mean(max(learner_seq_t, axis=0))
         """
         # remove invalid time
-        mask_t        = self.__get_mask_truncate_by_T(learner_seq_t, self.T, 0) # [batch_size, seq_len, 1]
-        learner_seq_t = tf.multiply(learner_seq_t, mask_t)                      # [batch_size, seq_len, 1]
+        mask_t        = self.__get_mask_truncate_by_T(learner_seq_t, self.T) # [batch_size, seq_len, 1]
+        learner_seq_t = tf.multiply(learner_seq_t, mask_t)                   # [batch_size, seq_len, 1]
         # policy 1
         t_0 = 0
         T   = tf.reduce_mean(tf.reduce_max(learner_seq_t, axis=0))
@@ -296,11 +295,11 @@ class PointProcessGenerator(object):
     def _reward(self, batch_size, t0, T, 
             expert_seq_t, expert_seq_l, expert_seq_m,    # expert sequences
             learner_seq_t, learner_seq_l, learner_seq_m, # learner sequences
-            kernel_bandwidth=1): 
+            kernel_bandwidth=0.5): 
         """reward function"""
         # get mask for concatenated expert and learner sequences
-        expert_seq_mask  = self.__get_mask_truncate_by_T(expert_seq_t, T, t0)  # batch_size*seq_len
-        learner_seq_mask = self.__get_mask_truncate_by_T(learner_seq_t, T, t0) # batch_size*seq_len
+        expert_seq_mask  = self.__get_mask_truncate_by_T(expert_seq_t, T, t0)  # [batch_size*seq_len, 1]
+        learner_seq_mask = self.__get_mask_truncate_by_T(learner_seq_t, T, t0) # [batch_size*seq_len, 1]
         # calculate mask for kernel matrix
         learner_learner_kernel_mask = tf.matmul(learner_seq_mask, tf.transpose(learner_seq_mask))
         expert_learner_kernel_mask  = tf.matmul(expert_seq_mask, tf.transpose(learner_seq_mask))
@@ -316,20 +315,18 @@ class PointProcessGenerator(object):
         learner_learner_kernel = tf.multiply(learner_learner_kernel, learner_learner_kernel_mask)
         expert_learner_kernel  = tf.multiply(expert_learner_kernel, expert_learner_kernel_mask)
         # calculate reward for each of data point in learner sequence
-        emp_ll_mean = tf.reduce_sum(learner_learner_kernel, axis=0) / batch_size # batch_size*seq_len
-        emp_el_mean = tf.reduce_sum(expert_learner_kernel, axis=0) / batch_size  # batch_size*seq_len
-        return tf.expand_dims(emp_ll_mean - emp_el_mean, -1)                     # [batch_size*seq_len, 1]
+        emp_ll_mean = tf.reduce_sum(learner_learner_kernel, axis=0) * 2 # batch_size*seq_len
+        emp_el_mean = tf.reduce_sum(expert_learner_kernel, axis=0) * 2  # batch_size*seq_len
+        return tf.expand_dims(emp_ll_mean - emp_el_mean, -1)            # [batch_size*seq_len, 1]
 
     @staticmethod
     def __get_mask_truncate_by_T(seq_t, T, t_0=0):
         """Masking time, location and mark sequences for the entries before the maximum time T."""
-        # squeeze since each time sequence has shape [batch_size*seq_len, 1] or [batch_size, seq_len, 1]
-        array_t = tf.squeeze(seq_t)                  # batch_size*seq_len or [batch_size, seq_len]
         # get basic mask where 0 if t > T else 1
-        mask_t  = tf.expand_dims(tf.multiply(
-            tf.cast(array_t < T, tf.float32),
-            tf.cast(array_t > t_0, tf.float32)), -1) # [batch_size*seq_len, 1] or [batch_size, seq_len, 1]
-        return mask_t
+        mask_t = tf.multiply(
+            tf.cast(seq_t < T, tf.float32),
+            tf.cast(seq_t > t_0, tf.float32))
+        return mask_t # [batch_size*seq_len, 1] or [batch_size, seq_len, 1]
     
     @staticmethod
     def __concatenate_batch(seqs):
@@ -411,6 +408,12 @@ class PointProcessGenerator(object):
                 batch_test_expert_t  = expert_seq_t[batch_test_ids, :, :]
                 batch_test_expert_l  = expert_seq_l[batch_test_ids, :, :]
                 batch_test_expert_m  = expert_seq_m[batch_test_ids, :, :]
+                # # Debug
+                # debug      = sess.run(self.test, feed_dict={
+                #     self.input_seq_t: batch_test_expert_t,
+                #     self.input_seq_l: batch_test_expert_l,
+                #     self.input_seq_m: batch_test_expert_m})
+                # print(debug)
                 # optimization procedure
                 sess.run(self.optimizer, feed_dict={
                     self.input_seq_t: batch_train_expert_t,

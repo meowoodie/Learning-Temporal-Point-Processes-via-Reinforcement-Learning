@@ -19,20 +19,20 @@ if __name__ == "__main__":
 	# np.random.seed(0)
 
 	# data configuration
-	n_seq       = 50
-	T           = 5.
+	n_seq       = 100
+	T           = 10.
 	m_dim       = 5
 
 	# generating parameters
-	alpha       = 0.01
+	alpha       = 0.6
 	beta        = 1
 	mu          = 2
-	freq        = 0.1
+	freq        = 1
 	magn        = 1
 	shift       = 0.5
 	n_component = 3
-	xlim        = [-50, 50]
-	ylim        = [-50, 50]
+	xlim        = [-5, 5]
+	ylim        = [-5, 5]
 	grid_time   = 0.1
 	grid_space  = 1
 
@@ -57,8 +57,8 @@ if __name__ == "__main__":
 		lstm_hidden_size = 10
 		loc_hidden_size  = 10
 		mak_hidden_size  = 10
-		batch_size       = 4
-		epoches          = 100
+		batch_size       = 20
+		epoches          = 200
 
 		ppg = PointProcessGenerator(
 			T=T, seq_len=step_size, 
@@ -68,4 +68,4 @@ if __name__ == "__main__":
 		ppg.train(sess, 
 			batch_size, epoches, 
 			expert_seq_t, expert_seq_l, expert_seq_m,
-			train_test_ratio = 9.)
+			train_test_ratio = 4.)

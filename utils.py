@@ -10,10 +10,10 @@ def l2_norm(x, y):
     This helper function calculates distance (l2 norm) between two arbitrary data points from tensor x and 
     tensor y respectively, where x and y have the same shape [length, data_dim].
     """
-    x_sqr = tf.reduce_sum(x * x, 1)       # [length, 1]
-    y_sqr = tf.reduce_sum(y * y, 1)       # [length, 1]
-    xy    = tf.matmul(x, tf.transpose(y)) # [length, length]
-    dist_mat = x_sqr + y_sqr - 2 * xy
+    x_sqr = tf.expand_dims(tf.reduce_sum(x * x, 1), -1) # [length, 1]
+    y_sqr = tf.expand_dims(tf.reduce_sum(y * y, 1), -1) # [length, 1]
+    xy    = tf.matmul(x, tf.transpose(y))               # [length, length]
+    dist_mat = x_sqr + tf.transpose(y_sqr) - 2 * xy
     return dist_mat
 
 class PointProcessIntensityMeter(object):
@@ -35,6 +35,7 @@ class PointProcessIntensityMeter(object):
         self.ax_t.clear()
         # sequence 1
         seq_flat_1 = seq_t_1.flatten()
+        seq_flat_1 = seq_flat_1[seq_flat_1 != 0]
         seq_1_intensity_cum = []
         for grid in np.arange(0, self.T, 0.5):
             idx = (seq_flat_1 < grid)
