@@ -54,8 +54,8 @@ if __name__ == "__main__":
 	with tf.Session() as sess:
 		# model configuration
 		step_size        = expert_seq_t.shape[1]
-		lstm_hidden_size = 10
-		loc_hidden_size  = 10
+		lstm_hidden_size = 100
+		loc_hidden_size  = 100
 		mak_hidden_size  = 10
 		batch_size       = 20
 		epoches          = 200

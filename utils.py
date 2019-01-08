@@ -56,7 +56,7 @@ class PointProcessIntensityMeter(object):
         self.ax_t.set_ylim((0, tlim))
         plt.pause(0.02)
 
-    def update_location_intensity(self, seq_l_1, seq_l_2, xylim=200, gridsize=51):
+    def update_location_intensity(self, seq_l_1, seq_l_2, xylim=5, gridsize=51):
         # clear last figure
         self.ax_l1.clear()
         self.ax_l2.clear()

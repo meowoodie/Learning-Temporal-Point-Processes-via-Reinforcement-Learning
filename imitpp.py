@@ -129,9 +129,9 @@ class CustomizedStochasticLSTM(object):
         next_m,  loglik_m = self._m(batch_size, last_state.h)  # [batch_size, m_dim], [batch_size, 1]  
         next_t = last_t + delta_t                              # [batch_size, t_dim]
         # log likelihood
-        loglik = loglik_t # + loglik_l # + loglik_m    # TODO: Add mark to input x
+        loglik = loglik_t + loglik_l # + loglik_m    # TODO: Add mark to input x
         # input of LSTM
-        x      = tf.concat([next_t], axis=1) # TODO: Add mark to input x
+        x      = tf.concat([next_t, next_l], axis=1) # TODO: Add mark to input x
         # one step rnn structure
         # - x is a tensor that contains a single step of data points with shape [batch_size, t_dim + l_dim + m_dim]
         # - state is a tensor of hidden state with shape [2, batch_size, state_size]
@@ -305,10 +305,10 @@ class PointProcessGenerator(object):
         expert_learner_kernel_mask  = tf.matmul(expert_seq_mask, tf.transpose(learner_seq_mask))
         # concatenate each data dimension for both expert sequence and learner sequence
         # TODO: Add mark to the sequences
-        # expert_seq  = tf.concat([expert_seq_t, expert_seq_l], axis=1)   # [batch_size*seq_len, t_dim+l_dim+m_dim]
-        # learner_seq = tf.concat([learner_seq_t, learner_seq_l], axis=1) # [batch_size*seq_len, t_dim+l_dim+m_dim]
-        expert_seq  = tf.concat([expert_seq_t], axis=1)                          # [batch_size*seq_len, t_dim]
-        learner_seq = tf.concat([learner_seq_t], axis=1)                         # [batch_size*seq_len, t_dim]
+        expert_seq  = tf.concat([expert_seq_t, expert_seq_l], axis=1)   # [batch_size*seq_len, t_dim+l_dim+m_dim]
+        learner_seq = tf.concat([learner_seq_t, learner_seq_l], axis=1) # [batch_size*seq_len, t_dim+l_dim+m_dim]
+        # expert_seq  = tf.concat([expert_seq_t], axis=1)                          # [batch_size*seq_len, t_dim]
+        # learner_seq = tf.concat([learner_seq_t], axis=1)                         # [batch_size*seq_len, t_dim]
         # calculate upper-half kernel matrix
         learner_learner_kernel, expert_learner_kernel = self.__kernel_matrix(
             learner_seq, expert_seq, kernel_bandwidth)                           # 2 * [batch_size*seq_len, batch_size*seq_len]
