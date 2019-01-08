@@ -129,9 +129,9 @@ class CustomizedStochasticLSTM(object):
         next_m,  loglik_m = self._m(batch_size, last_state.h)  # [batch_size, m_dim], [batch_size, 1]  
         next_t = last_t + delta_t                              # [batch_size, t_dim]
         # log likelihood
-        loglik = loglik_t + loglik_l # + loglik_m    # TODO: Add mark to input x
+        loglik = loglik_t # + loglik_l # + loglik_m    # TODO: Add mark to input x
         # input of LSTM
-        x      = tf.concat([next_t, next_l], axis=1) # TODO: Add mark to input x
+        x      = tf.concat([next_t], axis=1) # TODO: Add mark to input x
         # one step rnn structure
         # - x is a tensor that contains a single step of data points with shape [batch_size, t_dim + l_dim + m_dim]
         # - state is a tensor of hidden state with shape [2, batch_size, state_size]
@@ -252,26 +252,13 @@ class PointProcessGenerator(object):
         learner_seq_loglik = self.cslstm.seq_loglik
 
         # getting training time window (t_0 = 0, T = self.T by default)
-        learner_seq_t = self.__truncate_by_T(learner_seq_t, seq_t=learner_seq_t, T=self.T)
-        t_0, T        = self._training_time_window(learner_seq_t)
-        # self.test = T
-        
-        # sequences preprocessing
-        # - truncate sequences after time T
-        expert_seq_t, expert_seq_l, expert_seq_m, = \
-            self.__truncate_by_T(self.input_seq_t, seq_t=self.input_seq_t, T=T, t_0=t_0), \
-            self.__truncate_by_T(self.input_seq_l, seq_t=self.input_seq_t, T=T, t_0=t_0), \
-            self.__truncate_by_T(self.input_seq_m, seq_t=self.input_seq_t, T=T, t_0=t_0)
-        learner_seq_t, learner_seq_l, learner_seq_m, learner_seq_loglik = \
-            self.__truncate_by_T(learner_seq_t, seq_t=learner_seq_t, T=T, t_0=t_0), \
-            self.__truncate_by_T(learner_seq_l, seq_t=learner_seq_t, T=T, t_0=t_0), \
-            self.__truncate_by_T(learner_seq_m, seq_t=learner_seq_t, T=T, t_0=t_0), \
-            self.__truncate_by_T(learner_seq_loglik, seq_t=learner_seq_t, T=T, t_0=t_0)
-        # - concatenate batches in the sequences
+        t0, T = self._training_time_window(learner_seq_t)
+
+        # concatenate batches in the sequences
         expert_seq_t,  expert_seq_l,  expert_seq_m  = \
-            self.__concatenate_batch(expert_seq_t), \
-            self.__concatenate_batch(expert_seq_l), \
-            self.__concatenate_batch(expert_seq_m)
+            self.__concatenate_batch(self.input_seq_t), \
+            self.__concatenate_batch(self.input_seq_l), \
+            self.__concatenate_batch(self.input_seq_m)
         learner_seq_t, learner_seq_l, learner_seq_m, learner_seq_loglik = \
             self.__concatenate_batch(learner_seq_t), \
             self.__concatenate_batch(learner_seq_l), \
@@ -279,7 +266,7 @@ class PointProcessGenerator(object):
             self.__concatenate_batch(learner_seq_loglik)
         
         # calculate average rewards
-        reward = self._reward(batch_size, \
+        reward = self._reward(batch_size, t0, T,\
                               expert_seq_t,  expert_seq_l,  expert_seq_m, \
                               learner_seq_t, learner_seq_l, learner_seq_m) # [batch_size*seq_len, 1]
 
@@ -298,41 +285,51 @@ class PointProcessGenerator(object):
         Policy 1:
         t_0 = 0; T = mean(max(learner_seq_t, axis=0))
         """
+        # remove invalid time
+        mask_t        = self.__get_mask_truncate_by_T(learner_seq_t, self.T, 0) # [batch_size, seq_len, 1]
+        learner_seq_t = tf.multiply(learner_seq_t, mask_t)                      # [batch_size, seq_len, 1]
         # policy 1
         t_0 = 0
-        T   = tf.reduce_max(learner_seq_t) # tf.reduce_mean(tf.reduce_max(learner_seq_t, axis=0))
+        T   = tf.reduce_mean(tf.reduce_max(learner_seq_t, axis=0))
         return t_0, T
 
-    def _reward(self, batch_size,
+    def _reward(self, batch_size, t0, T, 
             expert_seq_t, expert_seq_l, expert_seq_m,    # expert sequences
             learner_seq_t, learner_seq_l, learner_seq_m, # learner sequences
             kernel_bandwidth=1): 
         """reward function"""
+        # get mask for concatenated expert and learner sequences
+        expert_seq_mask  = self.__get_mask_truncate_by_T(expert_seq_t, T, t0)  # batch_size*seq_len
+        learner_seq_mask = self.__get_mask_truncate_by_T(learner_seq_t, T, t0) # batch_size*seq_len
+        # calculate mask for kernel matrix
+        learner_learner_kernel_mask = tf.matmul(learner_seq_mask, tf.transpose(learner_seq_mask))
+        expert_learner_kernel_mask  = tf.matmul(expert_seq_mask, tf.transpose(learner_seq_mask))
         # concatenate each data dimension for both expert sequence and learner sequence
         # TODO: Add mark to the sequences
-        expert_seq  = tf.concat([expert_seq_t, expert_seq_l], axis=1)    # [batch_size*seq_len, t_dim+l_dim+m_dim]
-        learner_seq = tf.concat([learner_seq_t, learner_seq_l], axis=1) # [batch_size*seq_len, t_dim+l_dim+m_dim]
+        # expert_seq  = tf.concat([expert_seq_t, expert_seq_l], axis=1)   # [batch_size*seq_len, t_dim+l_dim+m_dim]
+        # learner_seq = tf.concat([learner_seq_t, learner_seq_l], axis=1) # [batch_size*seq_len, t_dim+l_dim+m_dim]
+        expert_seq  = tf.concat([expert_seq_t], axis=1)                          # [batch_size*seq_len, t_dim]
+        learner_seq = tf.concat([learner_seq_t], axis=1)                         # [batch_size*seq_len, t_dim]
         # calculate upper-half kernel matrix
-        learner_learner_kernel, learner_expert_kernel = self.__kernel_matrix(learner_seq, expert_seq, kernel_bandwidth) # [batch_size*seq_len, 2*batch_size*seq_len]
+        learner_learner_kernel, expert_learner_kernel = self.__kernel_matrix(
+            learner_seq, expert_seq, kernel_bandwidth)                           # 2 * [batch_size*seq_len, batch_size*seq_len]
+        learner_learner_kernel = tf.multiply(learner_learner_kernel, learner_learner_kernel_mask)
+        expert_learner_kernel  = tf.multiply(expert_learner_kernel, expert_learner_kernel_mask)
         # calculate reward for each of data point in learner sequence
-        emp_expert_mean  = tf.reduce_sum(learner_learner_kernel, axis=1) / batch_size   # batch_size*seq_len
-        emp_learner_mean = tf.reduce_sum(learner_expert_kernel, axis=1) / batch_size # batch_size*seq_len
-        return tf.expand_dims(emp_expert_mean - emp_learner_mean, -1) # [batch_size*seq_len, 1]
+        emp_ll_mean = tf.reduce_sum(learner_learner_kernel, axis=0) / batch_size # batch_size*seq_len
+        emp_el_mean = tf.reduce_sum(expert_learner_kernel, axis=0) / batch_size  # batch_size*seq_len
+        return tf.expand_dims(emp_ll_mean - emp_el_mean, -1)                     # [batch_size*seq_len, 1]
 
     @staticmethod
-    def __truncate_by_T(trunc_seq, seq_t, T, t_0=0):
+    def __get_mask_truncate_by_T(seq_t, T, t_0=0):
         """Masking time, location and mark sequences for the entries before the maximum time T."""
-        # data dimension of seq
-        d = tf.shape(trunc_seq)[-1]
-        # squeeze since each time entry is a list with a single element. 
-        array_t = tf.squeeze(seq_t, squeeze_dims=[2]) # [batch_size, seq_len]
+        # squeeze since each time sequence has shape [batch_size*seq_len, 1] or [batch_size, seq_len, 1]
+        array_t = tf.squeeze(seq_t)                  # batch_size*seq_len or [batch_size, seq_len]
         # get basic mask where 0 if t > T else 1
         mask_t  = tf.expand_dims(tf.multiply(
             tf.cast(array_t < T, tf.float32),
-            tf.cast(array_t > t_0, tf.float32)), -1)  # [batch_size, seq_len, 1] 
-        mask    = tf.tile(mask_t, [1, 1, d])          # [batch_size, seq_len, l_dim]
-        # return masked sequences
-        return tf.multiply(trunc_seq, mask)
+            tf.cast(array_t > t_0, tf.float32)), -1) # [batch_size*seq_len, 1] or [batch_size, seq_len, 1]
+        return mask_t
     
     @staticmethod
     def __concatenate_batch(seqs):
@@ -340,7 +337,7 @@ class PointProcessGenerator(object):
         array_seq = tf.unstack(seqs, axis=0)     # [batch_size, seq_len, data_dim]
         seq       = tf.concat(array_seq, axis=0) # [batch_size*seq_len, data_dim]
         return seq
-
+ 
     @staticmethod
     def __kernel_matrix(learner_seq, expert_seq, kernel_bandwidth):
         """
@@ -349,29 +346,13 @@ class PointProcessGenerator(object):
         is the distances between learn sequence and learn sequence, right_mat is the distances between 
         learn sequence and expert sequence.
         """
-        # helper function for getting nonzero 1D mask for a 2D sequence
-        def nonzero_mask(seq):
-            # data dimension
-            d    = tf.shape(seq)[-1] 
-            # 2D seq mask: 0 for zero, 1 for nonzero
-            mask = tf.cast(seq > 0, tf.float32)                    # [seq_len, data_dim]
-            mask = tf.expand_dims(tf.reduce_sum(mask, axis=1), -1) # [seq_len, 1]
-            mask = tf.cast(mask > 0, tf.float32)                   # [seq_len, 1]
-            return mask
         # calculate l2 distances
         learner_learner_mat = utils.l2_norm(learner_seq, learner_seq) # [batch_size*seq_len, batch_size*seq_len]
-        learner_expert_mat  = utils.l2_norm(learner_seq, expert_seq)  # [batch_size*seq_len, batch_size*seq_len]
+        expert_learner_mat  = utils.l2_norm(expert_seq, learner_seq)  # [batch_size*seq_len, batch_size*seq_len]
         # exponential kernel
-        learner_learner_mat = tf.exp(-tf.square(learner_learner_mat) / kernel_bandwidth)
-        learner_expert_mat  = tf.exp(-tf.square(learner_expert_mat) / kernel_bandwidth)
-        # remove invalid entries
-        learner_seq_mask = nonzero_mask(learner_seq)
-        expert_seq_mask  = nonzero_mask(expert_seq)
-        learner_learner_mat_mask = tf.matmul(learner_seq_mask, tf.transpose(expert_seq_mask))
-        learner_expert_mat_mask  = tf.matmul(learner_seq_mask, tf.transpose(expert_seq_mask))
-        learner_learner_mat = tf.multiply(learner_learner_mat, learner_learner_mat_mask)
-        learner_expert_mat  = tf.multiply(learner_expert_mat, learner_expert_mat_mask)
-        return learner_learner_mat, learner_expert_mat
+        learner_learner_mat = tf.exp(-learner_learner_mat / kernel_bandwidth)
+        expert_learner_mat  = tf.exp(-expert_learner_mat / kernel_bandwidth)
+        return learner_learner_mat, expert_learner_mat
 
     def train(self, sess, batch_size, 
             epoches,               # number of epoches (how many times is the entire dataset going to be trained)

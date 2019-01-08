@@ -16,7 +16,7 @@ from imitpp import PointProcessGenerator
 
 if __name__ == "__main__":
 	# generate expert sequences
-	np.random.seed(0)
+	# np.random.seed(0)
 
 	# data configuration
 	n_seq       = 50
@@ -24,15 +24,15 @@ if __name__ == "__main__":
 	m_dim       = 5
 
 	# generating parameters
-	alpha       = 0.6
+	alpha       = 0.01
 	beta        = 1
 	mu          = 2
-	freq        = 1
+	freq        = 0.1
 	magn        = 1
 	shift       = 0.5
 	n_component = 3
-	xlim        = [-5, 5]
-	ylim        = [-5, 5]
+	xlim        = [-50, 50]
+	ylim        = [-50, 50]
 	grid_time   = 0.1
 	grid_space  = 1
 
@@ -58,7 +58,7 @@ if __name__ == "__main__":
 		loc_hidden_size  = 10
 		mak_hidden_size  = 10
 		batch_size       = 4
-		epoches          = 20
+		epoches          = 100
 
 		ppg = PointProcessGenerator(
 			T=T, seq_len=step_size, 
@@ -68,4 +68,4 @@ if __name__ == "__main__":
 		ppg.train(sess, 
 			batch_size, epoches, 
 			expert_seq_t, expert_seq_l, expert_seq_m,
-			train_test_ratio = 4.)
+			train_test_ratio = 9.)
