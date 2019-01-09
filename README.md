@@ -107,7 +107,6 @@ The GIF below shows the process that the distribution of interval time (delta) b
 
 ##### Atlanta 911 Calls
 
-
 ##### MIMIC-III
 
 
