@@ -12,7 +12,7 @@ import numpy as np
 import tensorflow as tf
 
 from mstppg import MSTPPGenerator
-from imitpp import PointProcessGenerator
+from rlppg import RLPointProcessGenerator
 
 if __name__ == "__main__":
 	# generate expert sequences
@@ -60,7 +60,7 @@ if __name__ == "__main__":
 		batch_size       = 20
 		epoches          = 200
 
-		ppg = PointProcessGenerator(
+		ppg = RLPointProcessGenerator(
 			T=T, seq_len=step_size, 
 			lstm_hidden_size=lstm_hidden_size, loc_hidden_size=loc_hidden_size, mak_hidden_size=mak_hidden_size, 
 			m_dim=m_dim)
