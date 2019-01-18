@@ -51,8 +51,6 @@ class MLEPointProcessGenerator(object):
 
         # construct customized stochastic LSTM network
         self.mstlstm.initialize_network(batch_size)
-        # generated tensors: learner sequences (time, location, marks)
-        learner_seq_t, learner_seq_l, learner_seq_m = self.mstlstm.seq_t, self.mstlstm.seq_l, self.mstlstm.seq_m
         # log likelihood
         learner_seq_loglik = self.mstlstm.seq_loglik
         # getting training time window (t_0 = 0, T = self.T by default)
@@ -63,11 +61,6 @@ class MLEPointProcessGenerator(object):
             self.__concatenate_batch(self.input_seq_t), \
             self.__concatenate_batch(self.input_seq_l), \
             self.__concatenate_batch(self.input_seq_m)
-        learner_seq_t, learner_seq_l, learner_seq_m, learner_seq_loglik = \
-            self.__concatenate_batch(learner_seq_t), \
-            self.__concatenate_batch(learner_seq_l), \
-            self.__concatenate_batch(learner_seq_m), \
-            self.__concatenate_batch(learner_seq_loglik)
         
         # calculate average rewards
         reward = self._reward(batch_size, t0, T,\

@@ -11,8 +11,8 @@ import random
 import numpy as np
 import tensorflow as tf
 
-from mstppg import MSTPPGenerator
-from rlppg import RLPointProcessGenerator
+from ppgsim import MSTPPGenerator
+from ppgrl import RLPointProcessGenerator
 
 if __name__ == "__main__":
 	# generate expert sequences
@@ -68,4 +68,5 @@ if __name__ == "__main__":
 		ppg.train(sess, 
 			batch_size, epoches, 
 			expert_seq_t, expert_seq_l, expert_seq_m,
-			train_test_ratio = 4.)
+			train_test_ratio = 4.,
+			trainplot=True)

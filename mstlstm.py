@@ -91,7 +91,7 @@ class MarkedSpatialTemporalLSTM(object):
         last_t, last_lstm_state = init_t, init_lstm_state # loop initialization
         for _ in range(self.step_size):
             t, l, m, loglik, state = self._customized_lstm_cell(batch_size, tf_lstm_cell, last_lstm_state, last_t)
-            seq_t.append(t)           # record generated time 
+            seq_t.append(t)           # record generated time
             seq_l.append(l)           # record generated location
             seq_m.append(m)           # record generated mark 
             seq_loglik.append(loglik) # record log likelihood  
