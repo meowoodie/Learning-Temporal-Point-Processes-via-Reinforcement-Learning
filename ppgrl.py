@@ -112,8 +112,8 @@ class RLPointProcessGenerator(object):
         # TODO: Add mark to the sequences
         # expert_seq  = tf.concat([expert_seq_t, expert_seq_l], axis=1)   # [batch_size*seq_len, t_dim+l_dim+m_dim]
         # learner_seq = tf.concat([learner_seq_t, learner_seq_l], axis=1) # [batch_size*seq_len, t_dim+l_dim+m_dim]
-        expert_seq  = tf.concat([expert_seq_t], axis=1)                          # [batch_size*seq_len, t_dim]
-        learner_seq = tf.concat([learner_seq_t], axis=1)                         # [batch_size*seq_len, t_dim]
+        expert_seq  = tf.concat([expert_seq_l], axis=1)                          # [batch_size*seq_len, t_dim]
+        learner_seq = tf.concat([learner_seq_l], axis=1)                         # [batch_size*seq_len, t_dim]
         # calculate upper-half kernel matrix
         learner_learner_kernel, expert_learner_kernel = self.__kernel_matrix(
             learner_seq, expert_seq, kernel_bandwidth)                           # 2 * [batch_size*seq_len, batch_size*seq_len]
@@ -214,11 +214,12 @@ class RLPointProcessGenerator(object):
                 batch_test_expert_l  = expert_seq_l[batch_test_ids, :, :]
                 batch_test_expert_m  = expert_seq_m[batch_test_ids, :, :]
                 # # Debug
-                # debug      = sess.run(self.test, feed_dict={
+                # debug1, debug2 = sess.run([self.mstlstm.test1, self.mstlstm.test2], feed_dict={
                 #     self.input_seq_t: batch_test_expert_t,
                 #     self.input_seq_l: batch_test_expert_l,
                 #     self.input_seq_m: batch_test_expert_m})
-                # print(debug)
+                # print(debug1)
+                # print(debug2)
                 # optimization procedure
                 sess.run(self.optimizer, feed_dict={
                     self.input_seq_t: batch_train_expert_t,
