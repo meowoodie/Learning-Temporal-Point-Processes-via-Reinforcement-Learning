@@ -14,6 +14,11 @@ import tensorflow as tf
 from ppgsim import MSTPPGenerator
 from ppgrl import RLPointProcessGenerator
 
+# Avoid error msg [OMP: Error #15: Initializing libiomp5.dylib, but found libiomp5.dylib already initialized.]
+# Reference: https://github.com/dmlc/xgboost/issues/1715
+import os
+os.environ['KMP_DUPLICATE_LIB_OK']='True'
+
 if __name__ == "__main__":
 	# generate expert sequences
 	# np.random.seed(0)

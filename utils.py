@@ -5,6 +5,16 @@ import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
 
+
+def lebesgue_measure(S):
+    """
+    A helper function for calculating the Lebesgue measure for a space.
+    It actually is the length of an one-dimensional space, and the area of
+    a two-dimensional space.
+    """
+    sub_lebesgue_ms = [ sub_space[1] - sub_space[0] for sub_space in S ]
+    return np.prod(sub_lebesgue_ms)
+
 def l2_norm(x, y):
     """
     This helper function calculates distance (l2 norm) between two arbitrary data points from tensor x and 
