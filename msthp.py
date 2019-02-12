@@ -7,6 +7,7 @@ Imitation Learning for Point Process
 A Hawkes processes based model for generating marked spatial-temporal points.
 
 References:
+- https://github.com/meowoodie/Spatio-Temporal-Point-Process-Simulator
 
 Dependencies:
 - Python 3.6.7
@@ -26,4 +27,14 @@ class MarkedSpatialTemporalHawkesProcess(object):
         - T:     maximum time
         - m_dim: number of categories of marks
         """
+        self.mu      = mu
+        self.alpha   = alpha
+        self.beta    = beta
+        self.maximum = maximum
+        self.kernel  = kernel
+
         
+    def generate_inhomogeneous_points(self, lam):
+        pass
+
+    
