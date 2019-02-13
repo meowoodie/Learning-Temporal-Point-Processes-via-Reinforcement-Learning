@@ -74,7 +74,7 @@ class MarkedSpatialTemporalHawkesProcess(object):
             val   = self.mu
         return val
 
-    def _inhomogeneous_sampling(self, T, xlim, ylim, batch_size):
+    def _homogeneous_sampling(self, T, xlim, ylim, batch_size):
         '''
         To generate a homogeneous Poisson point pattern in space S, this function
         uses a two step procedure:
