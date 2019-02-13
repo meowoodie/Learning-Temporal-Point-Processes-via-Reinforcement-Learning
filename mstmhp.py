@@ -4,7 +4,7 @@
 """
 Imitation Learning for Point Process
 
-A Hawkes processes based model for generating marked spatial-temporal points.
+A multivariate Hawkes processes model for generating marked spatial-temporal points.
 
 References:
 - https://github.com/meowoodie/Spatio-Temporal-Point-Process-Simulator
@@ -19,40 +19,22 @@ import utils
 import numpy as np
 import tensorflow as tf
 
-class DiffusionKernel(object):
-    '''
-    Standard diffusion kernel function including the diffusion-type model proposed by Musmeci and
-    Vere-Jones (1992).
-    '''
-    def __init__(self, beta=1., C=1., sigma=[3., 3.], offset=[0, 0]):
-        self.beta   = tf.get_variable(name="kernel_beta", initializer=tf.constant(beta, dtype=tf.float32))
-        self.sigma  = tf.get_variable(name="kernel_sigma", initializer=tf.constant(sigma, dtype=tf.float32))
-        self.C      = C
-
-    def nu(self, delta_t, delta_l):
-        return (self.C/(2*np.pi*tf.reduce_prod(self.sigma)*delta_t)) * tf.exp(-1*self.beta*delta_t) * \
-               tf.exp(-tf.expand_dims(tf.reduce_sum((tf.square(delta_l) / tf.square(self.sigma)), axis=1), -1) / (2*delta_t))
-
-class MarkedSpatialTemporalHawkesProcess(object):
+class MarkedSpatialTemporalMultivariateHawkesProcess(object):
     """
     Marked Spatial Temporal Hawkes Process
 
     A stochastic marked spatial temporal points generator based on Hawkes process.
     """
 
-    def __init__(self, kernel, step_size, mu=5., alpha=1., beta=1., max_lam=500., m_dim=None):
+    def __init__(self, n_samples, n_nodes, beta=1.):
         """
         Params:
-        - T:     maximum time
-        - m_dim: number of categories of marks
         """
         # model parameters
-        self.mu        = tf.get_variable(name="lam_mu", initializer=tf.constant(mu, dtype=tf.float32))
-        self.alpha     = tf.get_variable(name="lam_alpha", initializer=tf.constant(alpha, dtype=tf.float32))
-        self.beta      = tf.get_variable(name="lam_beta", initializer=tf.constant(beta, dtype=tf.float32))
-        self.max_lam   = max_lam
-        self.kernel    = kernel
-        self.step_size = step_size
+        self.mu        = tf.get_variable(name="mu", initializer=tf.random_normal([n_nodes]))
+        self.alpha     = tf.get_variable(name="alpha", initializer=tf.random_normal([n_nodes, n_nodes]))
+        self.beta      = tf.get_variable(name="beta", initializer=tf.random_normal([1]))
+        self.n_samples = n_samples
         # generated samples
         self.seq_t   = []
         self.seq_l   = []
@@ -74,7 +56,7 @@ class MarkedSpatialTemporalHawkesProcess(object):
             val   = self.mu
         return val
 
-    def _homogeneous_sampling(self, T, xlim, ylim, batch_size):
+    def _thinning(self, T, xlim, ylim, batch_size):
         '''
         To generate a homogeneous Poisson point pattern in space S, this function
         uses a two step procedure:
@@ -93,12 +75,11 @@ class MarkedSpatialTemporalHawkesProcess(object):
         seq_t  = []
         seq_l  = []
         seq_c  = []
-        t_plus = tf.constant([10.], dtype=tf.float32)
         t      = tf.constant([0.], dtype=tf.float32)
         l      = tf.random_uniform([2], minval=xlim[0], maxval=xlim[1], dtype=tf.float32)
         for _ in range(self.step_size):
-            lam_hat = self._lam_value(t_plus, seq_t, l, seq_l)
-            u = tf.random_uniform([1], minval=0, maxval=1, dtype=tf.float32)                  
+            lam_hat = self._lam_value(t, seq_t, l, seq_l)
+            u = tf.random_uniform([1], minval=0, maxval=1, dtype=tf.float32)
             l = tf.random_uniform([2], minval=xlim[0], maxval=xlim[1])          # generated location sample
             d = tf.random_uniform([1], minval=0, maxval=1, dtype=tf.float32)[0] # acceptance rate
             w = - tf.log(u) / lam_hat                                           # so that w ~ exponential(lam_hat)
@@ -114,8 +95,7 @@ class MarkedSpatialTemporalHawkesProcess(object):
 
         
 if __name__ == "__main__":
-    kernel = DiffusionKernel()
-    hp     = MarkedSpatialTemporalHawkesProcess(kernel=kernel, step_size=100)
+    hp = MarkedSpatialTemporalMultivariateHawkesProcess(step_size=100)
     
     tf.set_random_seed(1)
     with tf.Session() as sess:
@@ -125,5 +105,3 @@ if __name__ == "__main__":
 
         points = sess.run(hp._homogeneous_sampling(T=1., xlim=[0.,1.], ylim=[0.,1.], batch_size=3))
         print(points)
-
-        # print(sess.run([ hp.alpha, hp.beta, hp.mu ]))
