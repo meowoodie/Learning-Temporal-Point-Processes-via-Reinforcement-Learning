@@ -17,7 +17,7 @@ Dependencies:
 
 import utils
 import numpy as np
-import tensorfow as tf
+import tensorflow as tf
 
 class DiffusionKernel(object):
     '''
@@ -109,15 +109,15 @@ class MarkedSpatialTemporalHawkesProcess(object):
         Returns samples: point process samples 
             [(t1, x1, y1), (t2, x2, y2), ..., (tn, xn, yn)]
         '''
-        t         = tf.constant(0)
+        t         = tf.constant(0, dtype=tf.float32)
         loop_vars = [t]
-        cond      = lambda t: tf.less(t, T)            # termint < T
+        cond      = lambda t: tf.less(t, T) # termint < T
         body      = lambda t: self.__sampling_point(t)
-        tf.while_loop(cond, body, loop_vars)
+        return tf.while_loop(cond, body, loop_vars)
 
     @staticmethod
     def __sampling_point(t):
-        pass
+        return tf.add(t, 1)
 
 
         
@@ -127,4 +127,5 @@ if __name__ == "__main__":
     
     tf.set_random_seed(1)
     with tf.Session() as sess:
-        points = sess.run(hp.generate(T=1.0, x_lim=[0, 1], y_lim=[0, 1], batch_size=2))
+        points = sess.run(hp.generate(T=10.0, x_lim=[0, 1], y_lim=[0, 1], batch_size=2))
+        print(points)
