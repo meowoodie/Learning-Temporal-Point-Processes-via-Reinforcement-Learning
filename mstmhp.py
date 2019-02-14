@@ -40,8 +40,11 @@ class MarkedSpatialTemporalMultivariateHawkesProcess(object):
         self.seq_l   = []
         # sampling process
         # self._homogeneous_sampling(T=10.0, x_lim=[0, 1], y_lim=[0, 1], batch_size=2)
+    
+    def _kernel(self, t, his_t, s, his_s):
+        
 
-    def _lam_value(self, t, his_t, l, his_l):
+    def _lam_value(self, t, his_t, s, his_s):
         '''
         return the intensity value at (t, l).
         The last element of seq_t and seq_s is the location (t, l) that we are
@@ -50,8 +53,8 @@ class MarkedSpatialTemporalMultivariateHawkesProcess(object):
         '''
         if len(his_t) > 0:
             his_t = tf.stack(his_t) # [step_size, 1]
-            his_l = tf.stack(his_l) # [step_size, 2]
-            val   = self.mu + self.alpha * tf.reduce_sum(self.beta * self.kernel.nu(t-his_t, l-his_l))
+            his_s = tf.stack(his_s) # [step_size, 2]
+            val   = self.mu + tf.reduce_sum(self.kernel(t, his_t, s, his_s))
         else:
             val   = self.mu
         return val
@@ -76,11 +79,9 @@ class MarkedSpatialTemporalMultivariateHawkesProcess(object):
         seq_l  = []
         seq_c  = []
         t      = tf.constant([0.], dtype=tf.float32)
-        l      = tf.random_uniform([2], minval=xlim[0], maxval=xlim[1], dtype=tf.float32)
-        for _ in range(self.step_size):
+        for _ in range(self.n_samples):
             lam_hat = self._lam_value(t, seq_t, l, seq_l)
             u = tf.random_uniform([1], minval=0, maxval=1, dtype=tf.float32)
-            l = tf.random_uniform([2], minval=xlim[0], maxval=xlim[1])          # generated location sample
             d = tf.random_uniform([1], minval=0, maxval=1, dtype=tf.float32)[0] # acceptance rate
             w = - tf.log(u) / lam_hat                                           # so that w ~ exponential(lam_hat)
             t = t + w                                                           # so that t is the next candidate point
@@ -92,6 +93,7 @@ class MarkedSpatialTemporalMultivariateHawkesProcess(object):
             seq_l.append(l * cond)
 
         return tf.stack(seq_c)
+
 
         
 if __name__ == "__main__":

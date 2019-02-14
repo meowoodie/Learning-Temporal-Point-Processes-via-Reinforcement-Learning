@@ -34,7 +34,7 @@ class RLPointProcessGenerator(object):
             step_size=seq_len, lstm_hidden_size=lstm_hidden_size, 
             loc_hidden_size=loc_hidden_size, mak_hidden_size=mak_hidden_size, m_dim=m_dim)
     
-    def _initialize_policy_network(self, batch_size, starter_learning_rate=0.01, decay_rate=0.99, decay_step=100):
+    def _initialize_policy_network(self, sess, batch_size, starter_learning_rate=0.01, decay_rate=0.99, decay_step=100):
         """
         Construct Policy Network
         
@@ -171,11 +171,12 @@ class RLPointProcessGenerator(object):
 
         # initialization
         if not pretrained:
-            # initialize policy network
-            self._initialize_policy_network(batch_size)
             # initialize network parameters
             init_op = tf.global_variables_initializer()
             sess.run(init_op)
+            # initialize policy network
+            self._initialize_policy_network(sess, batch_size)
+            
 
         # data configurations
         # - number of expert sequences
