@@ -35,14 +35,12 @@ class MarkedSpatialTemporalMultivariateHawkesProcess(object):
         self.alpha     = tf.get_variable(name="alpha", initializer=tf.random_normal([n_nodes, n_nodes]))
         self.beta      = tf.get_variable(name="beta", initializer=tf.random_normal([1]))
         self.n_samples = n_samples
+        self.n_nodes   = n_nodes
         # generated samples
         self.seq_t   = []
         self.seq_l   = []
         # sampling process
         # self._homogeneous_sampling(T=10.0, x_lim=[0, 1], y_lim=[0, 1], batch_size=2)
-    
-    def _kernel(self, t, his_t, s, his_s):
-        
 
     def _lam_value(self, t, his_t, s, his_s):
         '''
@@ -59,40 +57,94 @@ class MarkedSpatialTemporalMultivariateHawkesProcess(object):
             val   = self.mu
         return val
 
-    def _thinning(self, T, xlim, ylim, batch_size):
+    def generate_samples(self, sess, T, batch_size):
         '''
-        To generate a homogeneous Poisson point pattern in space S, this function
-        uses a two step procedure:
-        1. Simulate the number of events n = N(S) occurring in S according to a
-        Poisson distribution with mean lam * |S|.
-        2. Sample each of the n location according to a uniform distribution on S
-        respectively.
-        Returns samples: point process samples 
-            [(t1, x1, y1), (t2, x2, y2), ..., (tn, xn, yn)]
+        generate samples by thinning algorithm
         '''
-        # def accept_sample(t, l):
-        #     seq_t.append(t)
-        #     seq_l.append(l)
-        #     return t
-
-        seq_t  = []
-        seq_l  = []
-        seq_c  = []
-        t      = tf.constant([0.], dtype=tf.float32)
+        # evaluate current model parameters
+        mu, alpha, beta = sess.run([self.mu, self.alpha, self.beta])
+        
+        seq_t = []
+        seq_s = []
+        t     = 0 
+        # while s < T:
         for _ in range(self.n_samples):
-            lam_hat = self._lam_value(t, seq_t, l, seq_l)
-            u = tf.random_uniform([1], minval=0, maxval=1, dtype=tf.float32)
-            d = tf.random_uniform([1], minval=0, maxval=1, dtype=tf.float32)[0] # acceptance rate
-            w = - tf.log(u) / lam_hat                                           # so that w ~ exponential(lam_hat)
-            t = t + w                                                           # so that t is the next candidate point
-            cond = tf.cond(d * lam_hat <= self._lam_value(t, seq_t, l, seq_l), 
-                lambda: tf.constant(1., dtype=tf.float32),                      
-                lambda: tf.constant(0., dtype=tf.float32))
-            seq_c.append(cond)
-            seq_t.append(t * cond)
-            seq_l.append(l * cond)
+            # upper bound of the intensity lambda
+            lam_bar = np.sum([
+                self.mu[i] + np.sum([
+                    np.sum(self.alpha[i][j] * np.exp(-self.beta * (s - seq_t))])
+                    for j in self.n_nodes ])
+                for i in self.n_nodes ])
+            u = np.random.uniform()
+            w = -np.log(u)/lambda_bar
+            s = s + w
 
-        return tf.stack(seq_c)
+
+            lam_bar = 0
+            for i in range(m):
+                lambda_bar = lambda_bar + lambda0
+                for j in range(m):
+                    if A[j,i]>0:
+                        for tau in T_m[j]:
+                            lambda_bar = lambda_bar + A[j,i] * np.exp(-beta*(s - tau))
+            u = np.random.uniform()
+            w = -np.log(u)/lambda_bar
+            s = s + w
+            if s>T:
+                break
+            lambda_m =[]
+            for i in range(m):
+                lambda_m.append(lambda0)
+                for j in range(m):
+                    if A[j,i]>0:
+                        for tau in T_m[j]:
+                            lambda_m[i] = lambda_m[i] + A[j,i] * np.exp(-beta*(s - tau))
+            lambda_m = np.array(lambda_m)
+            D = np.random.uniform()
+            if D*lambda_bar <= np.sum(lambda_m):
+                k = 0
+                while D*lambda_bar > np.sum(lambda_m[0:(k+1)]):
+                    k = k + 1
+                num_events[k] = num_events[k] + 1
+                T_m[k].append(s)
+                events.append([s,k])
+        return(events)
+
+
+    # def _thinning(self, T, xlim, ylim, batch_size):
+    #     '''
+    #     To generate a homogeneous Poisson point pattern in space S, this function
+    #     uses a two step procedure:
+    #     1. Simulate the number of events n = N(S) occurring in S according to a
+    #     Poisson distribution with mean lam * |S|.
+    #     2. Sample each of the n location according to a uniform distribution on S
+    #     respectively.
+    #     Returns samples: point process samples 
+    #         [(t1, x1, y1), (t2, x2, y2), ..., (tn, xn, yn)]
+    #     '''
+    #     # def accept_sample(t, l):
+    #     #     seq_t.append(t)
+    #     #     seq_l.append(l)
+    #     #     return t
+
+    #     seq_t  = []
+    #     seq_l  = []
+    #     seq_c  = []
+    #     t      = tf.constant([0.], dtype=tf.float32)
+    #     for _ in range(self.n_samples):
+    #         lam_hat = self._lam_value(t, seq_t, l, seq_l)
+    #         u = tf.random_uniform([1], minval=0, maxval=1, dtype=tf.float32)
+    #         d = tf.random_uniform([1], minval=0, maxval=1, dtype=tf.float32)[0] # acceptance rate
+    #         w = - tf.log(u) / lam_hat                                           # so that w ~ exponential(lam_hat)
+    #         t = t + w                                                           # so that t is the next candidate point
+    #         cond = tf.cond(d * lam_hat <= self._lam_value(t, seq_t, l, seq_l), 
+    #             lambda: tf.constant(1., dtype=tf.float32),                      
+    #             lambda: tf.constant(0., dtype=tf.float32))
+    #         seq_c.append(cond)
+    #         seq_t.append(t * cond)
+    #         seq_l.append(l * cond)
+
+    #     return tf.stack(seq_c)
 
 
         
