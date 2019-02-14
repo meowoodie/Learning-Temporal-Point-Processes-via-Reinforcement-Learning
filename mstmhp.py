@@ -8,7 +8,8 @@ A multivariate Hawkes processes model for generating marked spatial-temporal poi
 
 References:
 - https://github.com/meowoodie/Spatio-Temporal-Point-Process-Simulator
-- https://www.math.fsu.edu/~ychen/research/Thinning%20algorithm.pdf   
+- https://www.math.fsu.edu/~ychen/research/Thinning%20algorithm.pdf 
+- https://www.math.fsu.edu/~ychen/research/multiHawkes.pdf  
 
 Dependencies:
 - Python 3.6.7
@@ -26,136 +27,103 @@ class MarkedSpatialTemporalMultivariateHawkesProcess(object):
     A stochastic marked spatial temporal points generator based on Hawkes process.
     """
 
-    def __init__(self, n_samples, n_nodes, beta=1.):
+    def __init__(self, n_nodes, beta=1.):
         """
         Params:
         """
         # model parameters
-        self.mu        = tf.get_variable(name="mu", initializer=tf.random_normal([n_nodes]))
-        self.alpha     = tf.get_variable(name="alpha", initializer=tf.random_normal([n_nodes, n_nodes]))
-        self.beta      = tf.get_variable(name="beta", initializer=tf.random_normal([1]))
-        self.n_samples = n_samples
+        self.mu        = tf.get_variable(name="mu", initializer=10 * tf.random_uniform([n_nodes], 0, 1))
+        self.alpha     = tf.get_variable(name="alpha", initializer=tf.random_uniform([n_nodes, n_nodes], 0, 1))
+        self.beta      = tf.get_variable(name="beta", initializer=tf.random_uniform([n_nodes, n_nodes], 0, 1))
         self.n_nodes   = n_nodes
-        # generated samples
-        self.seq_t   = []
-        self.seq_l   = []
         # sampling process
         # self._homogeneous_sampling(T=10.0, x_lim=[0, 1], y_lim=[0, 1], batch_size=2)
 
-    def _lam_value(self, t, his_t, s, his_s):
-        '''
-        return the intensity value at (t, l).
-        The last element of seq_t and seq_s is the location (t, l) that we are
-        going to inspect. Prior to that are the past locations which have
-        occurred.
-        '''
-        if len(his_t) > 0:
-            his_t = tf.stack(his_t) # [step_size, 1]
-            his_s = tf.stack(his_s) # [step_size, 2]
-            val   = self.mu + tf.reduce_sum(self.kernel(t, his_t, s, his_s))
-        else:
-            val   = self.mu
+    def _lam_value(self, t, his_t, k, alpha, beta, mu):
+        """
+        get lambda intensity value given sample current t, past samples his_t, and 
+        model parameters, including alpha, beta, mu. k is the number of components
+        that used to caculate the intensity value.
+        """
+        # k is no larger than n_nodes
+        if k >= self.n_nodes:
+            k = self.n_nodes
+        # intensity value
+        val = np.sum([
+            mu[i] + np.sum([
+                np.sum([
+                    alpha[i][j] * np.exp(- beta[i][j] * (t - tau))
+                    for tau in his_t ])
+                for j in range(self.n_nodes) ])
+            for i in range(k) ])
         return val
 
-    def generate_samples(self, sess, T, batch_size):
+    def generate_samples(self, sess, T, batch_size=1):
         '''
-        generate samples by thinning algorithm
+        generate samples by thinning algorithm, where model parameters are evaluated 
+        from tensorflow variables. 
         '''
         # evaluate current model parameters
         mu, alpha, beta = sess.run([self.mu, self.alpha, self.beta])
-        
-        seq_t = []
-        seq_s = []
-        t     = 0 
-        # while s < T:
-        for _ in range(self.n_samples):
-            # upper bound of the intensity lambda
-            lam_bar = np.sum([
-                self.mu[i] + np.sum([
-                    np.sum(self.alpha[i][j] * np.exp(-self.beta * (s - seq_t))])
-                    for j in self.n_nodes ])
-                for i in self.n_nodes ])
-            u = np.random.uniform()
-            w = -np.log(u)/lambda_bar
-            s = s + w
+        seq_ts = []
+        seq_ss = []
+        for _ in range(batch_size):
+            # sequence of time and indices of components
+            seq_t = []
+            seq_s = []
+            # first time and index of component
+            t     = 0
+            s     = 0
+            # generate samples
+            # for _ in range(self.n_samples):
+            while t < T:
+                # upper bound of the intensity lambda
+                lam_bar = self._lam_value(t, seq_t, self.n_nodes, alpha, beta, mu)
+                u = np.random.uniform()
+                w = -np.log(u) / lam_bar
+                t = t + w
+                if t > T:
+                    break
+                lam = self._lam_value(t, seq_t, self.n_nodes, alpha, beta, mu)
+                D = np.random.uniform()
+                # accept the current sample with the probability lam / lam_bar
+                if D * lam_bar <= lam:
+                    # search for the first k such that D * lam <= lam_k
+                    s = self.n_nodes - 1
+                    for k in range(self.n_nodes):
+                        lam_k = self._lam_value(t, seq_t, k, alpha, beta, mu)
+                        if D * lam_bar <= lam_k:
+                            s = k + 1
+                            break
+                    # record the current sample (t, s)
+                    seq_t.append(t)
+                    seq_s.append(s)
+            seq_ts.append(seq_t)
+            seq_ss.append(seq_s)
+        # organize sequence as tensor
+        max_len   = max(map(len, seq_ts))
+        mat_seq_t = np.zeros([batch_size, max_len])
+        mat_seq_s = np.zeros([batch_size, max_len])
+        for b in range(batch_size):
+            mat_seq_t[b, :len(seq_ts[b])] = seq_ts[b]
+            mat_seq_s[b, :len(seq_ss[b])] = seq_ss[b]
+        return mat_seq_t, mat_seq_s
+
+    # def log_likelihood(self, ):
 
 
-            lam_bar = 0
-            for i in range(m):
-                lambda_bar = lambda_bar + lambda0
-                for j in range(m):
-                    if A[j,i]>0:
-                        for tau in T_m[j]:
-                            lambda_bar = lambda_bar + A[j,i] * np.exp(-beta*(s - tau))
-            u = np.random.uniform()
-            w = -np.log(u)/lambda_bar
-            s = s + w
-            if s>T:
-                break
-            lambda_m =[]
-            for i in range(m):
-                lambda_m.append(lambda0)
-                for j in range(m):
-                    if A[j,i]>0:
-                        for tau in T_m[j]:
-                            lambda_m[i] = lambda_m[i] + A[j,i] * np.exp(-beta*(s - tau))
-            lambda_m = np.array(lambda_m)
-            D = np.random.uniform()
-            if D*lambda_bar <= np.sum(lambda_m):
-                k = 0
-                while D*lambda_bar > np.sum(lambda_m[0:(k+1)]):
-                    k = k + 1
-                num_events[k] = num_events[k] + 1
-                T_m[k].append(s)
-                events.append([s,k])
-        return(events)
-
-
-    # def _thinning(self, T, xlim, ylim, batch_size):
-    #     '''
-    #     To generate a homogeneous Poisson point pattern in space S, this function
-    #     uses a two step procedure:
-    #     1. Simulate the number of events n = N(S) occurring in S according to a
-    #     Poisson distribution with mean lam * |S|.
-    #     2. Sample each of the n location according to a uniform distribution on S
-    #     respectively.
-    #     Returns samples: point process samples 
-    #         [(t1, x1, y1), (t2, x2, y2), ..., (tn, xn, yn)]
-    #     '''
-    #     # def accept_sample(t, l):
-    #     #     seq_t.append(t)
-    #     #     seq_l.append(l)
-    #     #     return t
-
-    #     seq_t  = []
-    #     seq_l  = []
-    #     seq_c  = []
-    #     t      = tf.constant([0.], dtype=tf.float32)
-    #     for _ in range(self.n_samples):
-    #         lam_hat = self._lam_value(t, seq_t, l, seq_l)
-    #         u = tf.random_uniform([1], minval=0, maxval=1, dtype=tf.float32)
-    #         d = tf.random_uniform([1], minval=0, maxval=1, dtype=tf.float32)[0] # acceptance rate
-    #         w = - tf.log(u) / lam_hat                                           # so that w ~ exponential(lam_hat)
-    #         t = t + w                                                           # so that t is the next candidate point
-    #         cond = tf.cond(d * lam_hat <= self._lam_value(t, seq_t, l, seq_l), 
-    #             lambda: tf.constant(1., dtype=tf.float32),                      
-    #             lambda: tf.constant(0., dtype=tf.float32))
-    #         seq_c.append(cond)
-    #         seq_t.append(t * cond)
-    #         seq_l.append(l * cond)
-
-    #     return tf.stack(seq_c)
-
-
+                
         
 if __name__ == "__main__":
-    hp = MarkedSpatialTemporalMultivariateHawkesProcess(step_size=100)
+    hp = MarkedSpatialTemporalMultivariateHawkesProcess(n_nodes=10)
     
-    tf.set_random_seed(1)
+    # tf.set_random_seed(0)
+    # np.random.seed(0)
     with tf.Session() as sess:
 
         init_op = tf.global_variables_initializer()
         sess.run(init_op)
 
-        points = sess.run(hp._homogeneous_sampling(T=1., xlim=[0.,1.], ylim=[0.,1.], batch_size=3))
-        print(points)
+        seq_t, seq_s = hp.generate_samples(sess, T=10, batch_size=3)
+        print(seq_t)
+        print(seq_s)
