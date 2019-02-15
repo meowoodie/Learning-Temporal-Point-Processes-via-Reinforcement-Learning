@@ -22,7 +22,7 @@ class DiffusionKernel(object):
     Kernel function including the diffusion-type model proposed by Musmeci and
     Vere-Jones (1992).
     """
-    def __init__(self, beta=1., C=1., sigma_x = 1., sigma_y = 1.):
+    def __init__(self, beta=1., sigma_x = 1., sigma_y = 1.):
         self.beta    = beta
         self.sigma_x = sigma_x
         self.sigma_y = sigma_y

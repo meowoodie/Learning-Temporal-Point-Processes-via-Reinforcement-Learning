@@ -19,6 +19,37 @@ import arrow
 import numpy as np
 import tensorflow as tf
 
+from stppg import DiffusionKernel, HawkesLam, MarkedSpatialTemporalPointProcess
+
+class MarkedSpatialTemporalHawkes(object):
+    """
+    """
+
+    def __init__(self):
+        """
+        """
+        self.mu      = tf.get_variable(name="mu", initializer=tf.random_uniform(shape=(), minval=0, maxval=1))
+        self.beta    = tf.get_variable(name="beta", initializer=tf.random_uniform(shape=(), minval=0, maxval=1))
+        self.sigma_x = tf.get_variable(name="sigma_x", initializer=tf.random_uniform(shape=(), minval=0, maxval=1))
+        self.sigma_y = tf.get_variable(name="sigma_y", initializer=tf.random_uniform(shape=(), minval=0, maxval=1))
+
+    def _sampling(self, sess, T, S, batch_size):
+        """
+        """
+        # get current model parameters
+        mu, beta, sigma_x, sigma_y = sess.run([self.mu, self.beta, self.sigma_x, self.sigma_y])
+        # sampling points given model parameters
+        kernel = DiffusionKernel(beta=beta, sigma_x=sigma_x, sigma_y=sigma_y)
+        lam    = HawkesLam(mu, kernel, maximum=1e+6)
+        pp     = MarkedSpatialTemporalPointProcess(lam)
+        return pp.generate(T=T, S=S, batch_size=batch_size)
+
+    # def _log_likelihood(self, data):
+    #     """
+    #     """
+
+
+
 class MarkedSpatialTemporalLSTM(object):
     """
     Customized Stochastic LSTM Network
@@ -213,3 +244,13 @@ class MarkedSpatialTemporalLSTM(object):
         prob       = tf.nn.softmax(dense_feature)
         loglik     = tf.log(tf.reduce_sum(m * prob, 1) + 1e-13)
         return m, loglik
+
+if __name__ == "__main__":
+    # training model
+    tf.set_random_seed(1)
+    with tf.Session() as sess:
+        init_op = tf.global_variables_initializer()
+        sess.run(init_op)
+        hawkes = MarkedSpatialTemporalHawkes()
+        points = hawkes._sampling(sess, T=[0., 1.], S=[[-1., 1.], [-1., 1.]], batch_size=3)
+        print(points)
