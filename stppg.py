@@ -155,7 +155,7 @@ class MarkedSpatialTemporalPointProcess(object):
                     (arrow.now(), i, retained_points.shape[0]), file=sys.stderr)
         # log the final results of the thinning algorithm
         print("[%s] thining samples %s based on %s." % \
-            (arrow.now(), retained_points.shape, lam), file=sys.stderr)
+            (arrow.now(), retained_points.shape, self.lam), file=sys.stderr)
         return retained_points
 
     def generate(self, T=[0, 1], S=[[0, 1], [0, 1]], batch_size=10):

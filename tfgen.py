@@ -25,9 +25,10 @@ class MarkedSpatialTemporalHawkes(object):
     """
     """
 
-    def __init__(self):
+    def __init__(self, C=1.):
         """
         """
+        self.C       = C
         self.mu      = tf.get_variable(name="mu", initializer=tf.random_uniform(shape=(), minval=0, maxval=1))
         self.beta    = tf.get_variable(name="beta", initializer=tf.random_uniform(shape=(), minval=0, maxval=1))
         self.sigma_x = tf.get_variable(name="sigma_x", initializer=tf.random_uniform(shape=(), minval=0, maxval=1))
@@ -44,9 +45,19 @@ class MarkedSpatialTemporalHawkes(object):
         pp     = MarkedSpatialTemporalPointProcess(lam)
         return pp.generate(T=T, S=S, batch_size=batch_size)
 
-    # def _log_likelihood(self, data):
-    #     """
-    #     """
+    def _integral_func_g(self, delta_x, delta_y, delta_t):
+        """
+        """
+        integral_g = tf.contrib.integrate.odeint_fixed(
+            lambda _, x: tf.contrib.integrate.odeint_fixed(
+                lambda _, y: tf.contrib.integrate.odeint_fixed(
+                    lambda _, t: (self.C / 2 * np.pi * self.sigma_x * self.sigma_y * t) * \
+                                 tf.exp( - self.beta * t - \
+                                 ((tf.square(x)/tf.square(self.sigma_x) + tf.square(y)/tf.square(self.sigma_y))/(2*t))), 
+                    0.0, delta_t)[1], 
+                0.0, delta_y)[1],
+            0.0, delta_x)[1]
+        return integral_g
 
 
 
@@ -249,8 +260,26 @@ if __name__ == "__main__":
     # training model
     tf.set_random_seed(1)
     with tf.Session() as sess:
+        hawkes = MarkedSpatialTemporalHawkes()
         init_op = tf.global_variables_initializer()
         sess.run(init_op)
-        hawkes = MarkedSpatialTemporalHawkes()
-        points = hawkes._sampling(sess, T=[0., 1.], S=[[-1., 1.], [-1., 1.]], batch_size=3)
-        print(points)
+
+        x = tf.constant( [ 1.0, 2.0 ], dtype = tf.float32 )
+        y = tf.constant( [ 1.0, 2.0 ], dtype = tf.float32 )
+        t = tf.constant( [ 1.0, 2.0 ], dtype = tf.float32 )
+
+        int_g = hawkes._integral_func_g(x, y, t)
+
+        print(sess.run(int_g))
+        # points = hawkes._sampling(sess, T=[0., 1.], S=[[-1., 1.], [-1., 1.]], batch_size=3)
+        # print(points)
+
+
+
+    # i = tf.contrib.integrate.odeint_fixed(
+    #     lambda _, x: tf.contrib.integrate.odeint_fixed(
+    #         lambda _, y: x * y,
+    #         0.0,
+    #         y)[1],  
+    #     0.0, 
+    #     x)
