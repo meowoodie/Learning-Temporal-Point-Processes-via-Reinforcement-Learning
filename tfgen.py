@@ -29,10 +29,10 @@ class SpatialTemporalHawkes(object):
         """
         """
         self.C       = C
-        self.mu      = tf.get_variable(name="mu", initializer=tf.random_uniform(shape=(), minval=0, maxval=1))
-        self.beta    = tf.get_variable(name="beta", initializer=tf.random_uniform(shape=(), minval=0, maxval=1))
-        self.sigma_x = tf.get_variable(name="sigma_x", initializer=tf.random_uniform(shape=(), minval=0, maxval=1))
-        self.sigma_y = tf.get_variable(name="sigma_y", initializer=tf.random_uniform(shape=(), minval=0, maxval=1))
+        self.mu      = tf.get_variable(name="mu", initializer=tf.random_uniform(shape=(), minval=0, maxval=1), dtype=tf.float32)
+        self.beta    = tf.get_variable(name="beta", initializer=tf.random_uniform(shape=(), minval=0, maxval=1), dtype=tf.float32)
+        self.sigma_x = tf.get_variable(name="sigma_x", initializer=tf.random_uniform(shape=(), minval=0, maxval=1), dtype=tf.float32)
+        self.sigma_y = tf.get_variable(name="sigma_y", initializer=tf.random_uniform(shape=(), minval=0, maxval=1), dtype=tf.float32)
 
     def _sampling(self, sess, T, S, batch_size):
         """
@@ -40,20 +40,23 @@ class SpatialTemporalHawkes(object):
         # get current model parameters
         mu, beta, sigma_x, sigma_y = sess.run([self.mu, self.beta, self.sigma_x, self.sigma_y])
         # sampling points given model parameters
-        kernel  = DiffusionKernel(beta=beta, sigma_x=sigma_x, sigma_y=sigma_y)
-        lam     = HawkesLam(mu, kernel, maximum=1e+6)
-        pp      = MarkedSpatialTemporalPointProcess(lam)
-        points  = pp.generate(T=T, S=S, batch_size=batch_size)
-        # x, y, t = points[:, 1], points[:, 2], points[:, 0]
-        return points
+        kernel        = DiffusionKernel(beta=beta, sigma_x=sigma_x, sigma_y=sigma_y)
+        lam           = HawkesLam(mu, kernel, maximum=1e+4)
+        pp            = SpatialTemporalPointProcess(lam)
+        points, sizes = pp.generate(T=T, S=S, batch_size=batch_size)
+        return points, sizes
 
     def _kernel(self, x, y, t):
         """
         difussion kernel function proposed by Musmeci and Vere-Jones (1992).
         """
+        # since `tf.square(x)/tf.square(self.sigma_x)` has numerical issue, where 
+        # TypeError: x and y must have the same dtype, got tf.float64 != tf.float32
+        # then force each tensor to be float32 manually.
         return (self.C / 2 * np.pi * self.sigma_x * self.sigma_y * t) * \
                tf.exp( - self.beta * t - \
-               ((tf.square(x)/tf.square(self.sigma_x) + tf.square(y)/tf.square(self.sigma_y))/(2*t)))
+               ((tf.cast(tf.square(x), dtype=tf.float32)/tf.cast(tf.square(self.sigma_x), dtype=tf.float32) + \
+               tf.cast(tf.square(y), dtype=tf.float32)/tf.cast(tf.square(self.sigma_y), dtype=tf.float32))/(2*t)))
 
     def _integral_kernel(self, delta_x, delta_y, delta_t):
         """
@@ -76,7 +79,7 @@ class SpatialTemporalHawkes(object):
         lam = self.mu + tf.reduce_sum(self._kernel(x - x_his, y - y_his, t - t_his), axis=0)
         return lam
 
-    def log_conditional_pdf(self, points):
+    def _log_conditional_pdf(self, points):
         """
         log pdf conditional on history.
         """
@@ -85,17 +88,40 @@ class SpatialTemporalHawkes(object):
         int_range           = tf.transpose(tf.stack([int_from, int_to], axis=0), perm=[1, 0, 2])
         x, y, t             = points[-1, 1], points[-1, 2], points[-1, 0]
         x_his, y_his, t_his = points[:-1, 1], points[:-1, 2], points[:-1, 0]
-        # tail probability
-        log_tail_prob = - self.mu * (t - t_his[-1]) * (x - x_his[-1]) * (y - y_his[-1]) + \
-            tf.scan(lambda a, delta: self._integral_kernel(
-                tf.contrib.framework.sort(delta[:, 1]), 
-                tf.contrib.framework.sort(delta[:, 2]), 
-                delta[:, 0]),
-            int_range,
-            initializer=np.array(0., dtype=np.float32))[-1]
+        # print(points)
+        # # tail probability
+        # log_tail_prob = - self.mu * (t - t_his[-1]) * (x - x_his[-1]) * (y - y_his[-1]) + \
+        #     tf.scan(lambda a, delta: self._integral_kernel(
+        #         tf.contrib.framework.sort(delta[:, 1]), 
+        #         tf.contrib.framework.sort(delta[:, 2]), 
+        #         delta[:, 0]),
+        #     int_range,
+        #     initializer=np.array(0., dtype=np.float32))[-1]
         # triggering probability
         log_trig_prob = tf.log(self._lambda(x, y, t, x_his, y_his, t_his))
-        return log_trig_prob + log_tail_prob
+        return log_trig_prob # + log_tail_prob
+    
+    def get_learner_seqs(self, sess, T, S, batch_size):
+        """
+        """
+        points, sizes = self._sampling(sess, T, S, batch_size)
+        learner_seq_t = np.expand_dims(points[:, :, 0], -1)
+        learner_seq_s = np.expand_dims(points[:, :, 1:], -1)
+        # calculate log conditional pdf for each of data points
+        log_cond_pdfs = []
+        for b in range(batch_size):
+            n_prefix = 3
+            n_suffix = points.shape[1] - sizes[b] - n_prefix if points.shape[1] - sizes[b] - n_prefix > 0 else 0
+            print(n_prefix, n_suffix, points.shape[1], sizes[b])
+            log_cond_pdf = tf.stack([ self._log_conditional_pdf(points[b, :i, :]) for i in range(4, sizes[b]) ])
+            prefix_zeros = tf.zeros(n_prefix, dtype=tf.float32)
+            suffix_zeros = tf.zeros(n_suffix, dtype=tf.float32)
+            log_cond_pdf = tf.concat([prefix_zeros, log_cond_pdf, suffix_zeros], axis=0)
+            print(sess.run(tf.shape(log_cond_pdf)))
+            print(sess.run(log_cond_pdf))
+            log_cond_pdfs.append(log_cond_pdf)
+        log_cond_pdfs = tf.stack(log_cond_pdf, axis=0)
+        return log_cond_pdfs
 
 
 
@@ -302,12 +328,12 @@ if __name__ == "__main__":
         init_op = tf.global_variables_initializer()
         sess.run(init_op)
 
+        points = hawkes.get_learner_seqs(sess, T=[0., 3.], S=[[-1., 1.], [-1., 1.]], batch_size=2)
+        print(points[:, :, 0])
+
         # x = tf.constant( [ 1.0, 2.0 ], dtype = tf.float32 )
         # y = tf.constant( [ 1.0, 2.0 ], dtype = tf.float32 )
         # t = tf.constant( [ 1.0, 2.0 ], dtype = tf.float32 )
-
-        # points = hawkes._sampling(sess, T=[0., 1.], S=[[-1., 1.], [-1., 1.]], batch_size=3)
-        # print(points)
 
         # # int_g = hawkes._integral_kernel(x, y, t)
 
@@ -321,14 +347,11 @@ if __name__ == "__main__":
 
         # res = hawkes._lambda(x, y, t, x_his, y_his, t_his)
 
-        points = tf.constant([
-            [0., 1., -1.],
-            [1., 2., 0.],
-            [2., 1., -1.],
-            [3., 0., 0.],
-            [4., -1., 1.],
-            [5., -2., 2.]], dtype=tf.float32) 
+        # points = tf.constant([
+        #     [ 0.24222693,  0.40847074,  0.03159241],
+        #     [ 0.56548731, -0.6061974,   0.31062581],
+        #     [ 0.85899771,  0.65192706, -0.34560846],
+        #     [ 1.85899771,  0.25192701, -0.24560832]], dtype=tf.float32) 
 
-        res = hawkes.log_conditional_pdf(points)
-
-        print(sess.run(res))
+        # res = hawkes._log_conditional_pdf(points)
+        # print(sess.run(res))

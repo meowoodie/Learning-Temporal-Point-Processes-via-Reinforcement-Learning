@@ -163,6 +163,7 @@ class SpatialTemporalPointProcess(object):
         generate spatio-temporal points given lambda and kernel function
         """
         points_list = []
+        sizes       = []
         max_len     = 0
         b           = 0
         # generate inhomogeneous poisson points iterately
@@ -174,12 +175,13 @@ class SpatialTemporalPointProcess(object):
                 continue
             max_len = points.shape[0] if max_len < points.shape[0] else max_len
             points_list.append(points)
+            sizes.append(len(points))
             b += 1
         # fit the data into a tensor
         data = np.zeros((batch_size, max_len, 3))
         for b in range(batch_size):
             data[b, :points_list[b].shape[0]] = points_list[b]
-        return data
+        return data, sizes
 
 
 
