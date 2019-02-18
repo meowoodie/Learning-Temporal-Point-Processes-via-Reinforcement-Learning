@@ -6,14 +6,14 @@ import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
 
-from mstlstm import MarkedSpatialTemporalLSTM
+from tfgen import SpatialTemporalHawkes, MarkedSpatialTemporalLSTM
 
 class RL_Hawkes_Generator(object):
     """
     Reinforcement Learning Based Point Process Generator
     """
 
-    def __init__(self, T, S, C=1.):
+    def __init__(self, T, S, C=1., maximum=1e+4):
         """
         Params:
         - T: the maximum time of the sequences
@@ -24,15 +24,11 @@ class RL_Hawkes_Generator(object):
         self.T = T # maximum time
         self.S = S # location space
         # Hawkes process generator
-        self.hawkes = SpatialTemporalHawkes(C=C)
+        self.hawkes = SpatialTemporalHawkes(C=C, maximum=maximum)
     
-    def _rebulid_policy_optimizer(self, sess, batch_size): # , starter_learning_rate=0.01, decay_rate=0.99, decay_step=100):
+    def _rebulid_policy_optimizer(self, sess, batch_size, lr=1e-2):
         """
         """
-        # input tensors: expert sequences (time, location)
-        self.input_seq_t = tf.placeholder(tf.float32, [batch_size, None, 1])
-        self.input_seq_l = tf.placeholder(tf.float32, [batch_size, None, 2])
-
         # generated tensors: learner sequences (time, location, loglikelihood)
         learner_seq_t, learner_seq_l, learner_seq_loglik = self.hawkes.get_learner_seqs(sess, self.T, self.S, batch_size)
 
@@ -44,21 +40,21 @@ class RL_Hawkes_Generator(object):
             self.__concatenate_batch(learner_seq_t), \
             self.__concatenate_batch(learner_seq_l), \
             self.__concatenate_batch(learner_seq_loglik)
-        
+        print("[%s] rebuiding reward." % arrow.now(), file=sys.stderr)
         # calculate average rewards
-        reward = self._reward(batch_size, t0, T,\
-                              expert_seq_t,  expert_seq_l,  expert_seq_m, \
-                              learner_seq_t, learner_seq_l, learner_seq_m) # [batch_size*seq_len, 1]
-
+        reward = self._reward(batch_size, self.T[0], self.T[1],\
+                              expert_seq_t,  expert_seq_l, learner_seq_t, learner_seq_l) # [batch_size*seq_len, 1]
+        print("[%s] rebuiding optimizer." % arrow.now(), file=sys.stderr)
         # cost and optimizer
         self.cost      = tf.reduce_sum(tf.multiply(reward, learner_seq_loglik), axis=0) / batch_size
-        global_step    = tf.Variable(0, trainable=False)
-        learning_rate  = tf.train.exponential_decay(starter_learning_rate, global_step, decay_step, decay_rate, staircase=True)
-        self.optimizer = tf.train.AdamOptimizer(learning_rate, beta1=0.6, beta2=0.9).minimize(self.cost, global_step=global_step)
+        # global_step    = tf.Variable(0, trainable=False)
+        # learning_rate  = tf.train.exponential_decay(starter_learning_rate, global_step, decay_step, decay_rate, staircase=True)
+        # self.optimizer = tf.train.AdamOptimizer(learning_rate, beta1=0.6, beta2=0.9).minimize(self.cost, global_step=global_step)
+        self.optimizer = tf.train.GradientDescentOptimizer(lr).minimize(self.cost)
 
     def _reward(self, batch_size, t0, T, 
-            expert_seq_t, expert_seq_l, expert_seq_m,    # expert sequences
-            learner_seq_t, learner_seq_l, learner_seq_m, # learner sequences
+            expert_seq_t, expert_seq_l,   # expert sequences
+            learner_seq_t, learner_seq_l, # learner sequences
             kernel_bandwidth=0.5): 
         """reward function"""
         # get mask for concatenated expert and learner sequences
@@ -119,93 +115,74 @@ class RL_Hawkes_Generator(object):
             epoches,               # number of epoches (how many times is the entire dataset going to be trained)
             expert_seq_t,          # [n, seq_len, 1]
             expert_seq_l,          # [n, seq_len, 2]
-            expert_seq_m,          # [n, seq_len, m_dim]
-            train_test_ratio = 9., # n_train / n_test
             trainplot=True,        # plot the change of intensity over epoches
+            lr=1e-2,               # learning rate
             pretrained=False):
         """Train the point process generator given expert sequences."""
+        # input tensors: expert sequences (time, location)
+        self.input_seq_t = tf.placeholder(tf.float32, [batch_size, None, 1])
+        self.input_seq_l = tf.placeholder(tf.float32, [batch_size, None, 2])
+        
         # check the consistency of the shape of the expert sequences
-        assert expert_seq_t.shape[:-1] == expert_seq_l.shape[:-1] == expert_seq_m.shape[:-1], \
+        assert expert_seq_t.shape[:-1] == expert_seq_l.shape[:-1], \
             "inconsistant 'number of sequences' or 'sequence length' of input expert sequences"
 
         # initialization
         if not pretrained:
+            print("[%s] parameters are initialized." % arrow.now(), file=sys.stderr)
             # initialize network parameters
             init_op = tf.global_variables_initializer()
             sess.run(init_op)
 
         # data configurations
         # - number of expert sequences
-        n_data  = expert_seq_t.shape[0]
-        n_train = int(n_data * train_test_ratio / (train_test_ratio + 1.))
-        n_test  = int(n_data * 1. / (train_test_ratio + 1.))
+        n_data    = expert_seq_t.shape[0]
         # - number of batches
-        n_batches = int(n_train / batch_size)
-        # - check if test data size is large enough (> batch_size)
-        assert n_test >= batch_size, "test data size %d is less than batch size %d." % (n_test, batch_size)
+        n_batches = int(n_data / batch_size)
         
         if trainplot:
-            ppim = utils.PointProcessIntensityMeter(self.T, batch_size)
+            ppim = utils.PointProcessIntensityMeter(self.T[1], batch_size)
 
         # training over epoches
         for epoch in range(epoches):
             # shuffle indices of the training samples
             shuffled_ids = np.arange(n_data)
             np.random.shuffle(shuffled_ids)
-            shuffled_train_ids = shuffled_ids[:n_train]
-            shuffled_test_ids  = shuffled_ids[-n_test:]
+            # shuffled_train_ids = shuffled_ids[:n_train]
+            # shuffled_test_ids  = shuffled_ids[-n_test:]
 
             # training over batches
             avg_train_cost = []
-            avg_test_cost  = []
             for b in range(n_batches):
                 idx             = np.arange(batch_size * b, batch_size * (b + 1))
                 # training and testing indices selected in current batch
-                batch_train_ids = shuffled_train_ids[idx]
-                batch_test_ids  = shuffled_test_ids[:batch_size]
+                batch_train_ids = shuffled_ids[idx]
+                # batch_test_ids  = shuffled_test_ids[:batch_size]
                 # training and testing batch data
                 batch_train_expert_t = expert_seq_t[batch_train_ids, :, :]
                 batch_train_expert_l = expert_seq_l[batch_train_ids, :, :]
-                batch_train_expert_m = expert_seq_m[batch_train_ids, :, :]
-                batch_test_expert_t  = expert_seq_t[batch_test_ids, :, :]
-                batch_test_expert_l  = expert_seq_l[batch_test_ids, :, :]
-                batch_test_expert_m  = expert_seq_m[batch_test_ids, :, :]
-                self._rebulid_policy_optimizer(sess, batch_size)
+                self._rebulid_policy_optimizer(sess, batch_size, lr)
                 # optimization procedure
                 sess.run(self.optimizer, feed_dict={
                     self.input_seq_t: batch_train_expert_t,
-                    self.input_seq_l: batch_train_expert_l,
-                    self.input_seq_m: batch_train_expert_m})
+                    self.input_seq_l: batch_train_expert_l})
                 # cost for train batch and test batch
                 train_cost = sess.run(self.cost, feed_dict={
                     self.input_seq_t: batch_train_expert_t,
-                    self.input_seq_l: batch_train_expert_l,
-                    self.input_seq_m: batch_train_expert_m})
-                test_cost  = sess.run(self.cost, feed_dict={
-                    self.input_seq_t: batch_test_expert_t,
-                    self.input_seq_l: batch_test_expert_l,
-                    self.input_seq_m: batch_test_expert_m})
+                    self.input_seq_l: batch_train_expert_l})
                 # record cost for each batch
                 avg_train_cost.append(train_cost)
-                avg_test_cost.append(test_cost)
 
             if trainplot:
                 # update intensity plot
-                learner_seq_t, learner_seq_l = sess.run(
-                    [self.mstlstm.seq_t, self.mstlstm.seq_l], 
-                    feed_dict={
-                        self.input_seq_t: batch_test_expert_t,
-                        self.input_seq_l: batch_test_expert_l,
-                        self.input_seq_m: batch_test_expert_m})
+                learner_seq_t, learner_seq_l, _ = self.hawkes.get_learner_seqs(sess, self.T, self.S, batch_size)
                 ppim.update_time_intensity(batch_train_expert_t, learner_seq_t)
                 ppim.update_location_intensity(batch_train_expert_l, learner_seq_l)
 
             # training log output
             avg_train_cost = np.mean(avg_train_cost)
-            avg_test_cost  = np.mean(avg_test_cost)
             print('[%s] Epoch %d (n_train_batches=%d, batch_size=%d)' % (arrow.now(), epoch, n_batches, batch_size), file=sys.stderr)
             print('[%s] Training cost:\t%f' % (arrow.now(), avg_train_cost), file=sys.stderr)
-            print('[%s] Testing cost:\t%f' % (arrow.now(), avg_test_cost), file=sys.stderr)
 
 
 

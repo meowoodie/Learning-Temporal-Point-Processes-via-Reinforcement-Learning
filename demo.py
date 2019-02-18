@@ -11,8 +11,7 @@ import random
 import numpy as np
 import tensorflow as tf
 
-from ppgsim import MSTPPGenerator
-from ppgrl import RLPointProcessGenerator
+from ppgrl import RL_Hawkes_Generator
 
 # Avoid error msg [OMP: Error #15: Initializing libiomp5.dylib, but found libiomp5.dylib already initialized.]
 # Reference: https://github.com/dmlc/xgboost/issues/1715
@@ -22,56 +21,24 @@ os.environ['KMP_DUPLICATE_LIB_OK']='True'
 if __name__ == "__main__":
 	# generate expert sequences
 	# np.random.seed(0)
+	# tf.set_random_seed(1)
 
-	# data configuration
-	n_seq       = 100
-	T           = 10.
-	m_dim       = 5
+	points = np.load('../Spatio-Temporal-Point-Process-Simulator/hpp_Feb_17.npy')
+	print(points.shape)
 
-	# generating parameters
-	alpha       = 0.6
-	beta        = 1
-	mu          = 2
-	freq        = 1
-	magn        = 1
-	shift       = 0.5
-	n_component = 3
-	xlim        = [-5, 5]
-	ylim        = [-5, 5]
-	grid_time   = 0.1
-	grid_space  = 1
-
-	generator = MSTPPGenerator(
-		num_seq=n_seq, T=T, mark_vol=m_dim,
-		alpha=alpha, beta=beta, mu=mu, frequence=freq,
-		magnitude=magn, shift=shift, num_component=n_component,
-		xlim=xlim, ylim=ylim,
-		grid_time=grid_time, grid_space=grid_space)
-
-	_, expert_seq_t, expert_seq_l, expert_seq_m = generator.MSTPPSamples()
-	print(expert_seq_t)
-	print(expert_seq_t.shape)
-	print(expert_seq_l.shape)
-	print(expert_seq_m.shape)
+	expert_seq_t = np.expand_dims(points[:, :, 0], -1)
+	expert_seq_l = points[:, :, 1:]
 
 	# training model
-	tf.set_random_seed(1)
 	with tf.Session() as sess:
 		# model configuration
-		step_size        = expert_seq_t.shape[1]
-		lstm_hidden_size = 100
-		loc_hidden_size  = 100
-		mak_hidden_size  = 10
-		batch_size       = 20
-		epoches          = 200
+		batch_size       = 5
+		epoches          = 10
 
-		ppg = RLPointProcessGenerator(
-			T=T, seq_len=step_size, 
-			lstm_hidden_size=lstm_hidden_size, loc_hidden_size=loc_hidden_size, mak_hidden_size=mak_hidden_size, 
-			m_dim=m_dim)
+		ppg = RL_Hawkes_Generator(T=[0., 10.], S=[[-1., 1.], [-1., 1.]], maximum=1e+3)
 
-		ppg.train(sess, 
+		ppg.train(sess,
 			batch_size, epoches, 
-			expert_seq_t, expert_seq_l, expert_seq_m,
-			train_test_ratio = 4.,
+			expert_seq_t, expert_seq_l,
+			lr=1e-4,
 			trainplot=True)

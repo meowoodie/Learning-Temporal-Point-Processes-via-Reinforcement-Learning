@@ -3,7 +3,7 @@
 
 import numpy as np
 import tensorflow as tf
-import matplotlib.pyplot as plot
+import matplotlib.pyplot as plt
 
 def lebesgue_measure(S):
     """
@@ -19,6 +19,8 @@ def l2_norm(x, y):
     This helper function calculates distance (l2 norm) between two arbitrary data points from tensor x and 
     tensor y respectively, where x and y have the same shape [length, data_dim].
     """
+    x     = tf.cast(x, dtype=tf.float32)
+    y     = tf.cast(y, dtype=tf.float32)
     x_sqr = tf.expand_dims(tf.reduce_sum(x * x, 1), -1) # [length, 1]
     y_sqr = tf.expand_dims(tf.reduce_sum(y * y, 1), -1) # [length, 1]
     xy    = tf.matmul(x, tf.transpose(y))               # [length, length]
