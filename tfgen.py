@@ -19,9 +19,9 @@ import arrow
 import numpy as np
 import tensorflow as tf
 
-from stppg import DiffusionKernel, HawkesLam, MarkedSpatialTemporalPointProcess
+from stppg import DiffusionKernel, HawkesLam, SpatialTemporalPointProcess
 
-class MarkedSpatialTemporalHawkes(object):
+class SpatialTemporalHawkes(object):
     """
     """
 
@@ -40,24 +40,62 @@ class MarkedSpatialTemporalHawkes(object):
         # get current model parameters
         mu, beta, sigma_x, sigma_y = sess.run([self.mu, self.beta, self.sigma_x, self.sigma_y])
         # sampling points given model parameters
-        kernel = DiffusionKernel(beta=beta, sigma_x=sigma_x, sigma_y=sigma_y)
-        lam    = HawkesLam(mu, kernel, maximum=1e+6)
-        pp     = MarkedSpatialTemporalPointProcess(lam)
-        return pp.generate(T=T, S=S, batch_size=batch_size)
+        kernel  = DiffusionKernel(beta=beta, sigma_x=sigma_x, sigma_y=sigma_y)
+        lam     = HawkesLam(mu, kernel, maximum=1e+6)
+        pp      = MarkedSpatialTemporalPointProcess(lam)
+        points  = pp.generate(T=T, S=S, batch_size=batch_size)
+        # x, y, t = points[:, 1], points[:, 2], points[:, 0]
+        return points
 
-    def _integral_func_g(self, delta_x, delta_y, delta_t):
+    def _kernel(self, x, y, t):
         """
+        difussion kernel function proposed by Musmeci and Vere-Jones (1992).
+        """
+        return (self.C / 2 * np.pi * self.sigma_x * self.sigma_y * t) * \
+               tf.exp( - self.beta * t - \
+               ((tf.square(x)/tf.square(self.sigma_x) + tf.square(y)/tf.square(self.sigma_y))/(2*t)))
+
+    def _integral_kernel(self, delta_x, delta_y, delta_t):
+        """
+        calculate the integral of the kernel function between (xn, x), (yn, y) and (tn, t).
+            int_xn^x int_yn^y int_tn^t kernel(x', y', t') dx' dy' dt'
         """
         integral_g = tf.contrib.integrate.odeint_fixed(
             lambda _, x: tf.contrib.integrate.odeint_fixed(
                 lambda _, y: tf.contrib.integrate.odeint_fixed(
-                    lambda _, t: (self.C / 2 * np.pi * self.sigma_x * self.sigma_y * t) * \
-                                 tf.exp( - self.beta * t - \
-                                 ((tf.square(x)/tf.square(self.sigma_x) + tf.square(y)/tf.square(self.sigma_y))/(2*t))), 
+                    lambda _, t: self._kernel(x, y, t),
                     0.0, delta_t)[1], 
                 0.0, delta_y)[1],
             0.0, delta_x)[1]
         return integral_g
+
+    def _lambda(self, x, y, t, x_his, y_his, t_his):
+        """
+        lambda function for the Hawkes process.
+        """
+        lam = self.mu + tf.reduce_sum(self._kernel(x - x_his, y - y_his, t - t_his), axis=0)
+        return lam
+
+    def log_conditional_pdf(self, points):
+        """
+        log pdf conditional on history.
+        """
+        int_from            = points[-2, :] - points[:-3, :]
+        int_to              = points[-1, :] - points[:-3, :]
+        int_range           = tf.transpose(tf.stack([int_from, int_to], axis=0), perm=[1, 0, 2])
+        x, y, t             = points[-1, 1], points[-1, 2], points[-1, 0]
+        x_his, y_his, t_his = points[:-1, 1], points[:-1, 2], points[:-1, 0]
+        # tail probability
+        log_tail_prob = - self.mu * (t - t_his[-1]) * (x - x_his[-1]) * (y - y_his[-1]) + \
+            tf.scan(lambda a, delta: self._integral_kernel(
+                tf.contrib.framework.sort(delta[:, 1]), 
+                tf.contrib.framework.sort(delta[:, 2]), 
+                delta[:, 0]),
+            int_range,
+            initializer=np.array(0., dtype=np.float32))[-1]
+        # triggering probability
+        log_trig_prob = tf.log(self._lambda(x, y, t, x_his, y_his, t_his))
+        return log_trig_prob + log_tail_prob
 
 
 
@@ -260,26 +298,37 @@ if __name__ == "__main__":
     # training model
     tf.set_random_seed(1)
     with tf.Session() as sess:
-        hawkes = MarkedSpatialTemporalHawkes()
+        hawkes = SpatialTemporalHawkes()
         init_op = tf.global_variables_initializer()
         sess.run(init_op)
 
-        x = tf.constant( [ 1.0, 2.0 ], dtype = tf.float32 )
-        y = tf.constant( [ 1.0, 2.0 ], dtype = tf.float32 )
-        t = tf.constant( [ 1.0, 2.0 ], dtype = tf.float32 )
+        # x = tf.constant( [ 1.0, 2.0 ], dtype = tf.float32 )
+        # y = tf.constant( [ 1.0, 2.0 ], dtype = tf.float32 )
+        # t = tf.constant( [ 1.0, 2.0 ], dtype = tf.float32 )
 
-        int_g = hawkes._integral_func_g(x, y, t)
-
-        print(sess.run(int_g))
         # points = hawkes._sampling(sess, T=[0., 1.], S=[[-1., 1.], [-1., 1.]], batch_size=3)
         # print(points)
 
+        # # int_g = hawkes._integral_kernel(x, y, t)
 
+        # x = 1.
+        # y = 0. 
+        # t = 6.
 
-    # i = tf.contrib.integrate.odeint_fixed(
-    #     lambda _, x: tf.contrib.integrate.odeint_fixed(
-    #         lambda _, y: x * y,
-    #         0.0,
-    #         y)[1],  
-    #     0.0, 
-    #     x)
+        # x_his = tf.constant( [ 1., 2., 1., 0., -1., 0.], dtype = tf.float32 )
+        # y_his = tf.constant( [ 2., 1., 0., -1., -2., -1.], dtype = tf.float32 )
+        # t_his = tf.constant( [ 0., 1., 2., 3., 4., 5.], dtype = tf.float32 )
+
+        # res = hawkes._lambda(x, y, t, x_his, y_his, t_his)
+
+        points = tf.constant([
+            [0., 1., -1.],
+            [1., 2., 0.],
+            [2., 1., -1.],
+            [3., 0., 0.],
+            [4., -1., 1.],
+            [5., -2., 2.]], dtype=tf.float32) 
+
+        res = hawkes.log_conditional_pdf(points)
+
+        print(sess.run(res))

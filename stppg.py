@@ -22,7 +22,7 @@ class DiffusionKernel(object):
     Kernel function including the diffusion-type model proposed by Musmeci and
     Vere-Jones (1992).
     """
-    def __init__(self, beta=1., sigma_x = 1., sigma_y = 1.):
+    def __init__(self, beta=1., C=1., sigma_x = 1., sigma_y = 1.):
         self.beta    = beta
         self.sigma_x = sigma_x
         self.sigma_y = sigma_y
@@ -69,11 +69,11 @@ class HawkesLam(object):
     def __str__(self):
         return "Hawkes processes"
 
-class MarkedSpatialTemporalPointProcess(object):
+class SpatialTemporalPointProcess(object):
     """
     Marked Spatial Temporal Hawkes Process
 
-    A stochastic marked spatial temporal points generator based on Hawkes process.
+    A stochastic spatial temporal points generator based on Hawkes process.
     """
 
     def __init__(self, lam):
@@ -150,7 +150,7 @@ class MarkedSpatialTemporalPointProcess(object):
                 # retained_points.append(homo_points[i])
                 retained_points = np.concatenate([retained_points, homo_points[[i], :]], axis=0)
             # monitor the process of the generation
-            if i % (self.lam.upper_bound() / 10.) == 0 and i != 0:
+            if i != 0 and i % int(homo_points.shape[0] / 10) == 0:
                 print("[%s] %d raw samples have been checked. %d samples have been retained." % \
                     (arrow.now(), i, retained_points.shape[0]), file=sys.stderr)
         # log the final results of the thinning algorithm
@@ -167,6 +167,7 @@ class MarkedSpatialTemporalPointProcess(object):
         b           = 0
         # generate inhomogeneous poisson points iterately
         while b < batch_size:
+            print("[%s] generating %d-th sequence." % (arrow.now(), b), file=sys.stderr)
             homo_points = self._homogeneous_poisson_sampling(T, S)
             points      = self._inhomogeneous_poisson_thinning(homo_points)
             if points is None:
@@ -186,10 +187,8 @@ if __name__ == "__main__":
     mu     = 1.
     kernel = DiffusionKernel()
     lam    = HawkesLam(mu, kernel, maximum=1e+6)
-    pp     = MarkedSpatialTemporalPointProcess(lam)
+    pp     = SpatialTemporalPointProcess(lam)
 
     data = pp.generate(T=[0., 1.], S=[[-1., 1.], [-1., 1.]], batch_size=3)
     print(data)
     print(data.shape)
-
-    
