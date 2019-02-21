@@ -61,18 +61,29 @@ class SpatialTemporalHawkes(object):
                tf.cast(tf.square(y), dtype=tf.float32)/tf.cast(tf.square(self.sigma_y), dtype=tf.float32))/\
                (2*tf.cast(t, dtype=tf.float32))))
 
+    def _spatial_integrated_kernel(self, r, t):
+        return self.C * tf.exp(- self.beta * t) * (1 - tf.exp(-tf.square(r) / (2 * t)))
+
     def _integral_kernel(self, delta_x, delta_y, delta_t):
         """
         calculate the integral of the kernel function between (xn, x), (yn, y) and (tn, t).
             int_xn^x int_yn^y int_tn^t kernel(x', y', t') dx' dy' dt'
         """
+        # # deprecated integral
+        # integral_g = tf.contrib.integrate.odeint_fixed(
+        #     lambda _, x: tf.contrib.integrate.odeint_fixed(
+        #         lambda _, y: tf.contrib.integrate.odeint_fixed(
+        #             lambda _, t: self._kernel(x, y, t),
+        #             0.0, delta_t)[1], 
+        #         0.0, delta_y)[1],
+        #     0.0, delta_x)[1]
+
+        # R is the radius of the ellipse defined by sigma_x and sigma_y
+        R = tf.sqrt(tf.square(delta_x) / tf.square(self.sigma_x) + tf.square(delta_y) / tf.square(self.sigma_y))
+        # integral over t since spatial integration has been explicitly represented by _spatial_integrated_kernel
         integral_g = tf.contrib.integrate.odeint_fixed(
-            lambda _, x: tf.contrib.integrate.odeint_fixed(
-                lambda _, y: tf.contrib.integrate.odeint_fixed(
-                    lambda _, t: self._kernel(x, y, t),
-                    0.0, delta_t)[1], 
-                0.0, delta_y)[1],
-            0.0, delta_x)[1]
+            lambda _, t: self._spatial_integrated_kernel(R, t),
+            0.0, delta_t)[1]
         return integral_g
 
     def _lambda(self, x, y, t, x_his, y_his, t_his):
@@ -86,10 +97,10 @@ class SpatialTemporalHawkes(object):
         """
         log pdf conditional on history.
         """
-        # int_from            = points[-2, :] - points[:-3, :]
+        # int_from            = points[, :] - points[:-3, :]
         # int_to              = points[-1, :] - points[:-3, :]
         # int_range           = tf.transpose(tf.stack([int_from, int_to], axis=0), perm=[1, 0, 2])
-        x, y, t             = points[-1, 1], points[-1, 2], points[-1, 0]
+        x, y, t             = points[-1, 1],  points[-1, 2],  points[-1, 0]
         x_his, y_his, t_his = points[:-1, 1], points[:-1, 2], points[:-1, 0]
         # tail probability
         # log_tail_prob = - self.mu * (t - t_his[-1]) * (x - x_his[-1]) * (y - y_his[-1]) + \

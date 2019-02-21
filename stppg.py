@@ -7,6 +7,7 @@ STPPG: Spatio-Temporal Point Process Generator
 References:
 - https://www.jstatsoft.org/article/view/v053i02
 - https://www.ism.ac.jp/editsec/aism/pdf/044_1_0001.pdf
+- https://github.com/meowoodie/Spatio-Temporal-Point-Process-Simulator
 
 Dependencies:
 - Python 3.6.7
@@ -81,8 +82,6 @@ class SpatialTemporalPointProcess(object):
         Params:
         """
         # model parameters
-        # self.mu      = tf.get_variable(name="mu", initializer=tf.random_uniform([n_nodes], 0, 1))
-        # self.beta    = tf.get_variable(name="beta", initializer=tf.random_uniform([n_nodes, n_nodes], 0, 1))
         self.lam     = lam
 
     def _homogeneous_poisson_sampling(self, T=[0, 1], S=[[0, 1], [0, 1]]):
