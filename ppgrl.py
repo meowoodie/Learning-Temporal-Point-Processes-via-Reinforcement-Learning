@@ -170,6 +170,7 @@ class RL_Hawkes_Generator(object):
                 train_cost = sess.run(self.cost, feed_dict={
                     self.input_seq_t: batch_train_expert_t,
                     self.input_seq_l: batch_train_expert_l})
+                print("[%s] batch training cost: %.2f." % (arrow.now(), train_cost), file=sys.stderr)
                 # record cost for each batch
                 avg_train_cost.append(train_cost)
 
