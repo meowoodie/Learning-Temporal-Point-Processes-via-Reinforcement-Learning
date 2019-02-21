@@ -56,19 +56,26 @@ class SpatialTemporalHawkes(object):
         # TypeError: x and y must have the same dtype, got tf.float64 != tf.float32
         # then force each tensor to be float32 manually.
         return (self.C / (2 * np.pi * self.sigma_x * self.sigma_y * tf.cast(t, dtype=tf.float32))) * \
-               tf.exp( - self.beta * tf.cast(t, dtype=tf.float32) - \
+               tf.exp(- self.beta * tf.cast(t, dtype=tf.float32) - \
                ((tf.cast(tf.square(x), dtype=tf.float32)/tf.cast(tf.square(self.sigma_x), dtype=tf.float32) + \
                tf.cast(tf.square(y), dtype=tf.float32)/tf.cast(tf.square(self.sigma_y), dtype=tf.float32))/\
                (2*tf.cast(t, dtype=tf.float32))))
-
-    def _spatial_integrated_kernel(self, r, t):
-        return self.C * tf.exp(- self.beta * t) * (1 - tf.exp(-tf.square(r) / (2 * t)))
 
     def _integral_kernel(self, delta_x, delta_y, delta_t):
         """
         calculate the integral of the kernel function between (xn, x), (yn, y) and (tn, t).
             int_xn^x int_yn^y int_tn^t kernel(x', y', t') dx' dy' dt'
         """
+        def spatial_integrated_kernel(r, t):
+            # return self.C * tf.exp(- self.beta * t) * (1 - tf.exp(-tf.square(r) / (2 * t)))
+            return tf.exp(- t) * (1 - tf.exp(-tf.square(r) / (2 * t)))
+
+        # R is the radius of the ellipse defined by sigma_x and sigma_y
+        R = tf.sqrt(tf.square(delta_x) / tf.square(self.sigma_x) + tf.square(delta_y) / tf.square(self.sigma_y))
+        # integral over t since spatial integration has been explicitly represented by spatial_integrated_kernel
+        integral_g = tf.contrib.integrate.odeint_fixed(
+            lambda _, t: spatial_integrated_kernel(R, t),
+            0.0, delta_t)[1]
         # # deprecated integral
         # integral_g = tf.contrib.integrate.odeint_fixed(
         #     lambda _, x: tf.contrib.integrate.odeint_fixed(
@@ -77,13 +84,6 @@ class SpatialTemporalHawkes(object):
         #             0.0, delta_t)[1], 
         #         0.0, delta_y)[1],
         #     0.0, delta_x)[1]
-
-        # R is the radius of the ellipse defined by sigma_x and sigma_y
-        R = tf.sqrt(tf.square(delta_x) / tf.square(self.sigma_x) + tf.square(delta_y) / tf.square(self.sigma_y))
-        # integral over t since spatial integration has been explicitly represented by _spatial_integrated_kernel
-        integral_g = tf.contrib.integrate.odeint_fixed(
-            lambda _, t: self._spatial_integrated_kernel(R, t),
-            0.0, delta_t)[1]
         return integral_g
 
     def _lambda(self, x, y, t, x_his, y_his, t_his):
@@ -338,17 +338,18 @@ if __name__ == "__main__":
         init_op = tf.global_variables_initializer()
         sess.run(init_op)
 
-        t, s, log = hawkes.get_learner_seqs(sess, T=[0., 3.], S=[[-1., 1.], [-1., 1.]], batch_size=2)
-        print(sess.run([tf.shape(t), tf.shape(s), tf.shape(log)]))
+        # t, s, log = hawkes.get_learner_seqs(sess, T=[0., 3.], S=[[-1., 1.], [-1., 1.]], batch_size=2)
+        # print(sess.run([tf.shape(t), tf.shape(s), tf.shape(log)]))
 
-        t, s, log = hawkes.get_learner_seqs(sess, T=[0., 3.], S=[[-1., 1.], [-1., 1.]], batch_size=2)
-        print(sess.run([tf.shape(t), tf.shape(s), tf.shape(log)]))
+        # t, s, log = hawkes.get_learner_seqs(sess, T=[0., 3.], S=[[-1., 1.], [-1., 1.]], batch_size=2)
+        # print(sess.run([tf.shape(t), tf.shape(s), tf.shape(log)]))
 
-        # x = tf.constant( [ 1.0, 2.0 ], dtype = tf.float32 )
-        # y = tf.constant( [ 1.0, 2.0 ], dtype = tf.float32 )
-        # t = tf.constant( [ 1.0, 2.0 ], dtype = tf.float32 )
+        x = tf.constant( 3.0, dtype = tf.float32 )
+        y = tf.constant( 4.0, dtype = tf.float32 )
+        t = tf.constant( [ 10., 11.0 ], dtype = tf.float32 )
 
-        # # int_g = hawkes._integral_kernel(x, y, t)
+        int_g = hawkes._integral_kernel(x, y, t)
+        print(sess.run(int_g))
 
         # x = 1.
         # y = 0. 
