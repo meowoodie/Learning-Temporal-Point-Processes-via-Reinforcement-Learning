@@ -32,24 +32,22 @@ class RL_Hawkes_Generator(object):
         # generated tensors: learner sequences (time, location, loglikelihood)
         learner_seq_t, learner_seq_l, learner_seq_loglik = self.hawkes.get_learner_seqs(sess, self.T, self.S, batch_size)
 
-        # concatenate batches in the sequences
-        expert_seq_t,  expert_seq_l = \
-            self.__concatenate_batch(self.input_seq_t), \
-            self.__concatenate_batch(self.input_seq_l)
-        learner_seq_t, learner_seq_l, learner_seq_loglik = \
-            self.__concatenate_batch(learner_seq_t), \
-            self.__concatenate_batch(learner_seq_l), \
-            self.__concatenate_batch(learner_seq_loglik)
-        print("[%s] rebuiding reward." % arrow.now(), file=sys.stderr)
-        # calculate average rewards
-        reward = self._reward(batch_size, self.T[0], self.T[1],\
-                              expert_seq_t,  expert_seq_l, learner_seq_t, learner_seq_l) # [batch_size*seq_len, 1]
+        # # concatenate batches in the sequences
+        # expert_seq_t,  expert_seq_l = \
+        #     self.__concatenate_batch(self.input_seq_t), \
+        #     self.__concatenate_batch(self.input_seq_l)
+        # learner_seq_t, learner_seq_l, learner_seq_loglik = \
+        #     self.__concatenate_batch(learner_seq_t), \
+        #     self.__concatenate_batch(learner_seq_l), \
+        #     self.__concatenate_batch(learner_seq_loglik)
+        # print("[%s] rebuiding reward." % arrow.now(), file=sys.stderr)
+        # # calculate average rewards
+        # reward = self._reward(batch_size, self.T[0], self.T[1],\
+        #                       expert_seq_t,  expert_seq_l, learner_seq_t, learner_seq_l) # [batch_size*seq_len, 1]
         print("[%s] rebuiding optimizer." % arrow.now(), file=sys.stderr)
         # cost and optimizer
-        self.cost      = tf.reduce_sum(tf.multiply(reward, learner_seq_loglik), axis=0) / batch_size
-        # global_step    = tf.Variable(0, trainable=False)
-        # learning_rate  = tf.train.exponential_decay(starter_learning_rate, global_step, decay_step, decay_rate, staircase=True)
-        # self.optimizer = tf.train.AdamOptimizer(learning_rate, beta1=0.6, beta2=0.9).minimize(self.cost, global_step=global_step)
+        # self.cost      = tf.reduce_sum(tf.multiply(reward, learner_seq_loglik), axis=0)
+        self.cost      = tf.reduce_sum(learner_seq_loglik)
         self.optimizer = tf.train.GradientDescentOptimizer(lr).minimize(self.cost)
 
     def _reward(self, batch_size, t0, T, 

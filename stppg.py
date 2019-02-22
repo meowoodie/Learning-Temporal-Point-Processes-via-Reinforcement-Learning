@@ -157,7 +157,7 @@ class SpatialTemporalPointProcess(object):
             (arrow.now(), retained_points.shape, self.lam), file=sys.stderr)
         return retained_points
 
-    def generate(self, T=[0, 1], S=[[0, 1], [0, 1]], batch_size=10):
+    def generate(self, T=[0, 1], S=[[0, 1], [0, 1]], batch_size=10, verbose=True):
         """
         generate spatio-temporal points given lambda and kernel function
         """
@@ -167,7 +167,8 @@ class SpatialTemporalPointProcess(object):
         b           = 0
         # generate inhomogeneous poisson points iterately
         while b < batch_size:
-            print("[%s] generating %d-th sequence." % (arrow.now(), b), file=sys.stderr)
+            if verbose:
+                print("[%s] generating %d-th sequence." % (arrow.now(), b+1), file=sys.stderr)
             homo_points = self._homogeneous_poisson_sampling(T, S)
             points      = self._inhomogeneous_poisson_thinning(homo_points)
             if points is None:

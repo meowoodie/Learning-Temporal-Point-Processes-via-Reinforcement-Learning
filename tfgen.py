@@ -25,15 +25,16 @@ class SpatialTemporalHawkes(object):
     """
     """
 
-    def __init__(self, C=1., maximum=1e+4):
+    def __init__(self, C=1., maximum=1e+4, verbose=False):
         """
         """
-        self.C       = np.array(C, dtype=np.float32)
+        self.C       = C
         self.maximum = maximum
         self.mu      = tf.get_variable(name="mu", initializer=tf.random_uniform(shape=(), minval=0, maxval=1), dtype=tf.float32)
         self.beta    = tf.get_variable(name="beta", initializer=tf.random_uniform(shape=(), minval=0, maxval=1), dtype=tf.float32)
         self.sigma_x = tf.get_variable(name="sigma_x", initializer=tf.random_uniform(shape=(), minval=0, maxval=1), dtype=tf.float32)
         self.sigma_y = tf.get_variable(name="sigma_y", initializer=tf.random_uniform(shape=(), minval=0, maxval=1), dtype=tf.float32)
+        self.verbose = verbose
 
     def _sampling(self, sess, T, S, batch_size):
         """
@@ -45,37 +46,31 @@ class SpatialTemporalHawkes(object):
         kernel        = DiffusionKernel(beta=beta, sigma_x=sigma_x, sigma_y=sigma_y)
         lam           = HawkesLam(mu, kernel, maximum=self.maximum)
         pp            = SpatialTemporalPointProcess(lam)
-        points, sizes = pp.generate(T=T, S=S, batch_size=batch_size)
+        points, sizes = pp.generate(T=T, S=S, batch_size=batch_size, verbose=self.verbose)
         return points, sizes
 
     def _kernel(self, x, y, t):
         """
         difussion kernel function proposed by Musmeci and Vere-Jones (1992).
         """
-        # since `tf.square(x)/tf.square(self.sigma_x)` has numerical issue, where 
-        # TypeError: x and y must have the same dtype, got tf.float64 != tf.float32
-        # then force each tensor to be float32 manually.
-        return (self.C / (2 * np.pi * self.sigma_x * self.sigma_y * tf.cast(t, dtype=tf.float32))) * \
-               tf.exp(- self.beta * tf.cast(t, dtype=tf.float32) - \
-               ((tf.cast(tf.square(x), dtype=tf.float32)/tf.cast(tf.square(self.sigma_x), dtype=tf.float32) + \
-               tf.cast(tf.square(y), dtype=tf.float32)/tf.cast(tf.square(self.sigma_y), dtype=tf.float32))/\
-               (2*tf.cast(t, dtype=tf.float32))))
+        return (self.C / (2 * np.pi * self.sigma_x * self.sigma_y * t)) * \
+               tf.exp(- self.beta * t - (tf.square(x)/tf.square(self.sigma_x) + tf.square(y)/tf.square(self.sigma_y)) / (2*t))
 
-    def _integral_kernel(self, delta_x, delta_y, delta_t):
+    def _integral_kernel(self, delta_x, delta_y, range_t):
         """
         calculate the integral of the kernel function between (xn, x), (yn, y) and (tn, t).
             int_xn^x int_yn^y int_tn^t kernel(x', y', t') dx' dy' dt'
         """
         def spatial_integrated_kernel(r, t):
-            # return self.C * tf.exp(- self.beta * t) * (1 - tf.exp(-tf.square(r) / (2 * t)))
-            return tf.exp(- t) * (1 - tf.exp(-tf.square(r) / (2 * t)))
+            return self.C * tf.exp(- self.beta * t) * (1 - tf.exp(-tf.square(r) / (2 * t)))
+            # return tf.exp(- t) * (1 - tf.exp(-tf.square(r) / (2 * t)))
 
         # R is the radius of the ellipse defined by sigma_x and sigma_y
         R = tf.sqrt(tf.square(delta_x) / tf.square(self.sigma_x) + tf.square(delta_y) / tf.square(self.sigma_y))
         # integral over t since spatial integration has been explicitly represented by spatial_integrated_kernel
         integral_g = tf.contrib.integrate.odeint_fixed(
             lambda _, t: spatial_integrated_kernel(R, t),
-            0.0, delta_t)[1]
+            0.0, range_t)[1]
         # # deprecated integral
         # integral_g = tf.contrib.integrate.odeint_fixed(
         #     lambda _, x: tf.contrib.integrate.odeint_fixed(
@@ -97,22 +92,30 @@ class SpatialTemporalHawkes(object):
         """
         log pdf conditional on history.
         """
-        # int_from            = points[, :] - points[:-3, :]
-        # int_to              = points[-1, :] - points[:-3, :]
-        # int_range           = tf.transpose(tf.stack([int_from, int_to], axis=0), perm=[1, 0, 2])
+        points              = tf.cast(points, dtype=tf.float32)
+        # variables for calculating triggering probability
         x, y, t             = points[-1, 1],  points[-1, 2],  points[-1, 0]
         x_his, y_his, t_his = points[:-1, 1], points[:-1, 2], points[:-1, 0]
-        # tail probability
-        # log_tail_prob = - self.mu * (t - t_his[-1]) * (x - x_his[-1]) * (y - y_his[-1]) + \
-        #     tf.scan(lambda a, delta: self._integral_kernel(
-        #         tf.contrib.framework.sort(delta[:, 1]), 
-        #         tf.contrib.framework.sort(delta[:, 2]), 
-        #         delta[:, 0]),
-        #     int_range,
-        #     initializer=np.array(0., dtype=np.float32))[-1]
         # triggering probability
-        log_trig_prob = tf.log(self._lambda(x, y, t, x_his, y_his, t_his))
-        return log_trig_prob # + log_tail_prob
+        log_trig_prob       = tf.log(self._lambda(x, y, t, x_his, y_his, t_his))
+        # if there is only one data points, then no tail probability
+        if points.shape[0] <= 1:
+            return log_trig_prob
+        # variables for calculating tail probability
+        txy                 = tf.tile(tf.expand_dims(points[-1, :], axis=0), [points.shape[0]-1, 1])
+        txy_n               = points[:-1, :]
+        int_range           = tf.transpose(tf.stack([txy_n, txy], axis=0), perm=[1, 0, 2])
+        R                   = tf.sqrt(tf.square(x - x_his[-1]) / tf.square(self.sigma_x) + \
+                                      tf.square(y - y_his[-1]) / tf.square(self.sigma_y))
+        # tail probability
+        log_tail_prob       = - self.mu * (t - t_his[-1]) * 2 * np.pi * R - \
+            tf.scan(lambda a, txy2txy_n: self._integral_kernel(
+                txy2txy_n[1, 1] - txy2txy_n[0, 1], # delta_x = x - x_n
+                txy2txy_n[1, 2] - txy2txy_n[0, 2], # delta_y = y - y_n
+                txy2txy_n[:, 0]),                 # (t_n, t)
+            int_range,
+            initializer=np.array(0., dtype=np.float32))[-1]
+        return log_trig_prob + log_tail_prob
     
     def get_learner_seqs(self, sess, T, S, batch_size):
         """
@@ -123,12 +126,10 @@ class SpatialTemporalHawkes(object):
         # calculate log conditional pdf for each of data points
         log_cond_pdfs = []
         for b in range(batch_size):
-            n_prefix = 1
-            n_suffix = points.shape[1] - sizes[b] if points.shape[1] - sizes[b] > 0 else 0
-            log_cond_pdf = tf.stack([ self._log_conditional_pdf(points[b, :i, :]) for i in range(1, sizes[b]) ])
-            prefix_zeros = tf.zeros(n_prefix, dtype=tf.float32)
-            suffix_zeros = tf.zeros(n_suffix, dtype=tf.float32)
-            log_cond_pdf = tf.concat([prefix_zeros, log_cond_pdf, suffix_zeros], axis=0)
+            n_paddings    = points.shape[1] - sizes[b]
+            log_cond_pdf  = tf.stack([ self._log_conditional_pdf(points[b, :i, :]) for i in range(1, sizes[b]+1) ])
+            padding_zeros = tf.zeros(n_paddings, dtype=tf.float32)
+            log_cond_pdf  = tf.concat([log_cond_pdf, padding_zeros], axis=0)
             log_cond_pdfs.append(log_cond_pdf)
         log_cond_pdfs = tf.expand_dims(tf.stack(log_cond_pdfs, axis=0), -1)
         return learner_seq_t, learner_seq_s, log_cond_pdfs
@@ -334,7 +335,7 @@ if __name__ == "__main__":
     # training model
     tf.set_random_seed(1)
     with tf.Session() as sess:
-        hawkes = SpatialTemporalHawkes()
+        hawkes = SpatialTemporalHawkes(maximum=1e+3)
         init_op = tf.global_variables_initializer()
         sess.run(init_op)
 
@@ -342,14 +343,14 @@ if __name__ == "__main__":
         # print(sess.run([tf.shape(t), tf.shape(s), tf.shape(log)]))
 
         # t, s, log = hawkes.get_learner_seqs(sess, T=[0., 3.], S=[[-1., 1.], [-1., 1.]], batch_size=2)
-        # print(sess.run([tf.shape(t), tf.shape(s), tf.shape(log)]))
+        # print(t, s, sess.run(log))
 
-        x = tf.constant( 3.0, dtype = tf.float32 )
-        y = tf.constant( 4.0, dtype = tf.float32 )
-        t = tf.constant( [ 10., 11.0 ], dtype = tf.float32 )
+        # x = tf.constant( 3.0, dtype = tf.float32 )
+        # y = tf.constant( 4.0, dtype = tf.float32 )
+        # t = tf.constant( [ 10., 11.0 ], dtype = tf.float32 )
 
-        int_g = hawkes._integral_kernel(x, y, t)
-        print(sess.run(int_g))
+        # int_g = hawkes._integral_kernel(x, y, t)
+        # print(sess.run(int_g))
 
         # x = 1.
         # y = 0. 
@@ -362,9 +363,9 @@ if __name__ == "__main__":
         # res = hawkes._lambda(x, y, t, x_his, y_his, t_his)
 
         # points = tf.constant([
-        #     [ 0.24222693,  0.40847074,  0.03159241],
-        #     [ 0.56548731, -0.6061974,   0.31062581],
-        #     [ 0.85899771,  0.65192706, -0.34560846],
+        #     # [ 0.24222693,  0.40847074,  0.03159241],
+        #     # [ 0.56548731, -0.6061974,   0.31062581],
+        #     # [ 0.85899771,  0.65192706, -0.34560846],
         #     [ 1.85899771,  0.25192701, -0.24560832]], dtype=tf.float32) 
 
         # res = hawkes._log_conditional_pdf(points)
