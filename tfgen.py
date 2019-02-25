@@ -28,12 +28,25 @@ class SpatialTemporalHawkes(object):
     def __init__(self, C=1., maximum=1e+4, verbose=False):
         """
         """
+        INIT_PARA_FACTOR = 5e-2
         self.C       = C
         self.maximum = maximum
-        self.mu      = tf.get_variable(name="mu", initializer=tf.random_uniform(shape=(), minval=0, maxval=1), dtype=tf.float32)
-        self.beta    = tf.get_variable(name="beta", initializer=tf.random_uniform(shape=(), minval=0, maxval=1), dtype=tf.float32)
-        self.sigma_x = tf.get_variable(name="sigma_x", initializer=tf.random_uniform(shape=(), minval=0, maxval=1), dtype=tf.float32)
-        self.sigma_y = tf.get_variable(name="sigma_y", initializer=tf.random_uniform(shape=(), minval=0, maxval=1), dtype=tf.float32)
+        self.mu      = tf.get_variable(
+            name="mu", 
+            initializer=tf.constant(INIT_PARA_FACTOR), dtype=tf.float32)
+            # initializer=INIT_PARA_FACTOR * tf.random_uniform(shape=(), minval=0, maxval=1), dtype=tf.float32)
+        self.beta    = tf.get_variable(
+            name="beta", 
+            initializer=tf.constant(5.), dtype=tf.float32)
+            # initializer=INIT_PARA_FACTOR * tf.random_uniform(shape=(), minval=0, maxval=1), dtype=tf.float32)
+        self.sigma_x = tf.get_variable(
+            name="sigma_x", 
+            initializer=tf.constant(INIT_PARA_FACTOR), dtype=tf.float32)
+            # initializer=INIT_PARA_FACTOR * tf.random_uniform(shape=(), minval=0, maxval=1), dtype=tf.float32)
+        self.sigma_y = tf.get_variable(
+            name="sigma_y", 
+            initializer=tf.constant(INIT_PARA_FACTOR), dtype=tf.float32)
+            # initializer=INIT_PARA_FACTOR * tf.random_uniform(shape=(), minval=0, maxval=1), dtype=tf.float32)
         self.verbose = verbose
 
     def _sampling(self, sess, T, S, batch_size):
@@ -41,12 +54,13 @@ class SpatialTemporalHawkes(object):
         """
         # get current model parameters
         mu, beta, sigma_x, sigma_y = sess.run([self.mu, self.beta, self.sigma_x, self.sigma_y])
-        print("[%s] mu=%.2f, beta=%.2f, sigma_x=%.2f, sigma_y=%.2f." % (arrow.now(), mu, beta, sigma_x, sigma_y), file=sys.stderr)
+        print("[%s] mu=%.5f, beta=%.5f, sigma_x=%.5f, sigma_y=%.5f." % (arrow.now(), mu, beta, sigma_x, sigma_y), file=sys.stderr)
         # sampling points given model parameters
         kernel        = DiffusionKernel(beta=beta, sigma_x=sigma_x, sigma_y=sigma_y)
         lam           = HawkesLam(mu, kernel, maximum=self.maximum)
         pp            = SpatialTemporalPointProcess(lam)
         points, sizes = pp.generate(T=T, S=S, batch_size=batch_size, verbose=self.verbose)
+        print(sizes)
         return points, sizes
 
     def _kernel(self, x, y, t):
@@ -63,7 +77,6 @@ class SpatialTemporalHawkes(object):
         """
         def spatial_integrated_kernel(r, t):
             return self.C * tf.exp(- self.beta * t) * (1 - tf.exp(-tf.square(r) / (2 * t)))
-            # return tf.exp(- t) * (1 - tf.exp(-tf.square(r) / (2 * t)))
 
         # R is the radius of the ellipse defined by sigma_x and sigma_y
         R = tf.sqrt(tf.square(delta_x) / tf.square(self.sigma_x) + tf.square(delta_y) / tf.square(self.sigma_y))
@@ -71,14 +84,15 @@ class SpatialTemporalHawkes(object):
         integral_g = tf.contrib.integrate.odeint_fixed(
             lambda _, t: spatial_integrated_kernel(R, t),
             0.0, range_t)[1]
+
         # # deprecated integral
         # integral_g = tf.contrib.integrate.odeint_fixed(
         #     lambda _, x: tf.contrib.integrate.odeint_fixed(
         #         lambda _, y: tf.contrib.integrate.odeint_fixed(
         #             lambda _, t: self._kernel(x, y, t),
-        #             0.0, delta_t)[1], 
-        #         0.0, delta_y)[1],
-        #     0.0, delta_x)[1]
+        #             0.0, range_t)[1], 
+        #         0.0, tf.constant([-1., 1.], dtype=tf.float32))[1],
+        #     0.0, tf.constant([-1., 1.], dtype=tf.float32))[1]
         return integral_g
 
     def _lambda(self, x, y, t, x_his, y_his, t_his):
@@ -108,11 +122,12 @@ class SpatialTemporalHawkes(object):
         R                   = tf.sqrt(tf.square(x - x_his[-1]) / tf.square(self.sigma_x) + \
                                       tf.square(y - y_his[-1]) / tf.square(self.sigma_y))
         # tail probability
-        log_tail_prob       = - self.mu * (t - t_his[-1]) * 2 * np.pi * R - \
+        # log_tail_prob       = - self.mu * (t - t_his[-1]) * 2 * np.pi * R - \
+        log_tail_prob       = - self.mu * (t - t_his[-1]) * 2 * 2 - \
             tf.scan(lambda a, txy2txy_n: self._integral_kernel(
                 txy2txy_n[1, 1] - txy2txy_n[0, 1], # delta_x = x - x_n
                 txy2txy_n[1, 2] - txy2txy_n[0, 2], # delta_y = y - y_n
-                txy2txy_n[:, 0]),                 # (t_n, t)
+                txy2txy_n[:, 0]),                  # (t_n, t)
             int_range,
             initializer=np.array(0., dtype=np.float32))[-1]
         return log_trig_prob + log_tail_prob

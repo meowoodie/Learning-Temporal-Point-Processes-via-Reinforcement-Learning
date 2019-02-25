@@ -24,13 +24,13 @@ class RL_Hawkes_Generator(object):
         self.T = T # maximum time
         self.S = S # location space
         # Hawkes process generator
-        self.hawkes = SpatialTemporalHawkes(C=C, maximum=maximum)
+        self.hawkes = SpatialTemporalHawkes(C=C, maximum=maximum, verbose=False)
     
-    def _rebulid_policy_optimizer(self, sess, batch_size, lr=1e-2):
+    def _rebulid_policy_optimizer(self, sess, batch_size, lr=1e-3):
         """
         """
-        # generated tensors: learner sequences (time, location, loglikelihood)
-        learner_seq_t, learner_seq_l, learner_seq_loglik = self.hawkes.get_learner_seqs(sess, self.T, self.S, batch_size)
+        # # generated tensors: learner sequences (time, location, loglikelihood)
+        # learner_seq_t, learner_seq_l, learner_seq_loglik = self.hawkes.get_learner_seqs(sess, self.T, self.S, batch_size)
 
         # # concatenate batches in the sequences
         # expert_seq_t,  expert_seq_l = \
@@ -44,10 +44,11 @@ class RL_Hawkes_Generator(object):
         # # calculate average rewards
         # reward = self._reward(batch_size, self.T[0], self.T[1],\
         #                       expert_seq_t,  expert_seq_l, learner_seq_t, learner_seq_l) # [batch_size*seq_len, 1]
-        print("[%s] rebuiding optimizer." % arrow.now(), file=sys.stderr)
-        # cost and optimizer
+        # print("[%s] rebuilding optimizer." % arrow.now(), file=sys.stderr)
+        # # # cost and optimizer
         # self.cost      = tf.reduce_sum(tf.multiply(reward, learner_seq_loglik), axis=0)
-        self.cost      = tf.reduce_sum(learner_seq_loglik)
+
+        self.cost      = - tf.reduce_sum(learner_seq_loglik)
         self.optimizer = tf.train.GradientDescentOptimizer(lr).minimize(self.cost)
 
     def _reward(self, batch_size, t0, T, 
@@ -160,6 +161,7 @@ class RL_Hawkes_Generator(object):
                 batch_train_expert_t = expert_seq_t[batch_train_ids, :, :]
                 batch_train_expert_l = expert_seq_l[batch_train_ids, :, :]
                 self._rebulid_policy_optimizer(sess, batch_size, lr)
+                print("evaluating...")
                 # optimization procedure
                 sess.run(self.optimizer, feed_dict={
                     self.input_seq_t: batch_train_expert_t,
