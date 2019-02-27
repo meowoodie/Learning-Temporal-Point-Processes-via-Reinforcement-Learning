@@ -62,9 +62,9 @@ class SpatialTemporalHawkes(object):
         kernel        = DiffusionKernel(beta=beta, sigma_x=sigma_x, sigma_y=sigma_y)
         lam           = HawkesLam(mu, kernel, maximum=self.maximum)
         pp            = SpatialTemporalPointProcess(lam)
-        points, sizes = pp.generate(T=self.T, S=self.S, batch_size=batch_size, verbose=self.verbose)
+        seqs, sizes   = pp.generate(T=self.T, S=self.S, batch_size=batch_size, verbose=self.verbose)
         print(sizes)
-        return points, sizes
+        return tf.constant(seqs, dtype=tf.float32), sizes
 
     def _kernel(self, x, y, t):
         """
@@ -80,12 +80,13 @@ class SpatialTemporalHawkes(object):
         lam = self.mu + tf.reduce_sum(self._kernel(x - x_his, y - y_his, t - t_his), axis=0)
         return lam
 
-    def log_conditional_pdf(self, points, keep_latest_k=4):
+    def log_conditional_pdf(self, points, keep_latest_k=None):
         """
         log pdf conditional on history.
         """
-
-        points              = tf.cast(points[-keep_latest_k:, :], dtype=tf.float32)
+        if keep_latest_k is not None: 
+            points          = points[-keep_latest_k:, :]
+        # number of the points
         len_points          = tf.shape(points)[0]
         # variables for calculating triggering probability
         x, y, t             = points[-1, 1],  points[-1, 2],  points[-1, 0]
@@ -101,34 +102,44 @@ class SpatialTemporalHawkes(object):
             tn, ti        = points[-2, 0], points[:-1, 0]
             t_ti, tn_ti   = t - ti, tn - ti
             # tail probability
-            log_tail_base_prob = - self.mu * (t - t_his[-1]) * utils.lebesgue_measure(self.S)
-            log_tail_int_prob  = - tf.reduce_sum(tf.scan(
-                lambda a, i: self.C * (tf.exp(- self.beta * tn_ti[i]) - tf.exp(- self.beta * t_ti[i])) / self.beta,
-                tf.range(tf.shape(t_ti)[0]),
-                initializer=np.array(0., dtype=np.float32)))
-            return log_trig_prob + log_tail_base_prob + log_tail_int_prob
-
+            log_tail_prob = - \
+                self.mu * (t - t_his[-1]) * utils.lebesgue_measure(self.S) - \
+                tf.reduce_sum(tf.scan(
+                    lambda a, i: self.C * (tf.exp(- self.beta * tn_ti[i]) - tf.exp(- self.beta * t_ti[i])) / self.beta,
+                    tf.range(tf.shape(t_ti)[0]),
+                    initializer=np.array(0., dtype=np.float32)))
+            return log_trig_prob + log_tail_prob
+        # TODO: Unsolved issue:
+        #       pdf_with_history will still be called even if the condition is true, which leads to exception
+        #       "ValueError: slice index -1 of dimension 0 out of bounds." due to that points is empty but we 
+        #       try to index a nonexisted element.
+        #       However, when points is indexed in a scan loop, this works fine and the numerical result is 
+        #       also correct. which is very confused to me. Therefore, I leave this problem here temporarily.
         log_cond_pdf = tf.cond(tf.less(len_points, 2), 
-            pdf_no_history, pdf_with_history)
+            pdf_no_history,   # if there is only one point in the sequence
+            pdf_with_history) # if there is more than one point in the sequence
 
         return log_cond_pdf
     
-    def get_learner_seqs(self, sess, batch_size):
+    def get_learner_seqs(self, sess, batch_size, keep_latest_k):
         """
+        generate learner sequences as well as their corresponding element-wise log-likelihood.
         """
-        points, sizes = self._sampling(sess, batch_size)
-        learner_seq_t = np.expand_dims(points[:, :, 0], -1)
-        learner_seq_s = points[:, :, 1:]
+        seqs, sizes = self._sampling(sess, batch_size)
         # calculate log conditional pdf for each of data points
         log_cond_pdfs = []
         for b in range(batch_size):
-            n_paddings    = points.shape[1] - sizes[b]
-            log_cond_pdf  = tf.stack([ self.log_conditional_pdf(points[b, :i, :]) for i in range(1, sizes[b]) ])
+            points        = seqs[b, :, :]
+            n_paddings    = points.shape[0] - sizes[b]
+            log_cond_pdf  = tf.scan(
+                lambda a, i: self.log_conditional_pdf(points[:i, :], keep_latest_k),
+                tf.range(1, sizes[b]+1), # from the first point to the last point
+                initializer=np.array(0., dtype=np.float32))
             padding_zeros = tf.zeros(n_paddings, dtype=tf.float32)
             log_cond_pdf  = tf.concat([log_cond_pdf, padding_zeros], axis=0)
             log_cond_pdfs.append(log_cond_pdf)
         log_cond_pdfs = tf.expand_dims(tf.stack(log_cond_pdfs, axis=0), -1)
-        return learner_seq_t, learner_seq_s, log_cond_pdfs
+        return tf.expand_dims(seqs[:, :, 0], -1), seqs[:, :, 1:], log_cond_pdfs
 
 
 
@@ -329,34 +340,9 @@ class MarkedSpatialTemporalLSTM(object):
 
 if __name__ == "__main__":
     # training model
-    tf.set_random_seed(1)
+    # tf.set_random_seed(1)
     with tf.Session() as sess:
         hawkes = SpatialTemporalHawkes(T=[0., 3.], S=[[-1., 1.], [-1., 1.]], maximum=1e+3)
-        init_op = tf.global_variables_initializer()
-        sess.run(init_op)
-
-        # t, s, log = hawkes.get_learner_seqs(sess, T=[0., 3.], S=[[-1., 1.], [-1., 1.]], batch_size=2)
-        # print(sess.run([tf.shape(t), tf.shape(s), tf.shape(log)]))
-
-        # t, s, log = hawkes.get_learner_seqs(sess, T=[0., 3.], S=[[-1., 1.], [-1., 1.]], batch_size=2)
-        # print(t, s, sess.run(log))
-
-        # x = tf.constant( 3.0, dtype = tf.float32 )
-        # y = tf.constant( 4.0, dtype = tf.float32 )
-        # t = tf.constant( [ 10., 11.0 ], dtype = tf.float32 )
-
-        # int_g = hawkes._integral_kernel(x, y, t)
-        # print(sess.run(int_g))
-
-        # x = 1.
-        # y = 0. 
-        # t = 6.
-
-        # x_his = tf.constant( [ 1., 2., 1., 0., -1., 0.], dtype = tf.float32 )
-        # y_his = tf.constant( [ 2., 1., 0., -1., -2., -1.], dtype = tf.float32 )
-        # t_his = tf.constant( [ 0., 1., 2., 3., 4., 5.], dtype = tf.float32 )
-
-        # res = hawkes._lambda(x, y, t, x_his, y_his, t_his)
 
         points = tf.constant([
             [ 0.24222693,  0.40847074,  0.03159241],
@@ -367,5 +353,14 @@ if __name__ == "__main__":
             [ 1.35899771,  0.65192706, -0.34560846],
             [ 1.85899771,  0.25192701, -0.24560832]], dtype=tf.float32) 
 
-        res = hawkes._log_conditional_pdf(points)
-        print(sess.run(res))
+        init_op = tf.global_variables_initializer()
+        sess.run(init_op)
+
+        r = hawkes.log_conditional_pdf(points[:tf.constant(5, dtype=tf.int32), :])
+
+        # r = tf.scan(
+        #     lambda a, i: hawkes.log_conditional_pdf(points[:i, :]),
+        #     tf.range(1, tf.shape(points)[0]+1), # from the first point to the last point
+        #     initializer=np.array(0., dtype=np.float32))
+
+        print(sess.run(r))

@@ -23,7 +23,7 @@ if __name__ == "__main__":
 	# np.random.seed(0)
 	# tf.set_random_seed(1)
 
-	points = np.load('../Spatio-Temporal-Point-Process-Simulator/results/hpp_Feb_25.npy')
+	points = np.load('../Spatio-Temporal-Point-Process-Simulator/results/hpp_Feb_18.npy')
 	print(points.shape)
 
 	expert_seq_t = np.expand_dims(points[:, :, 0], -1)
@@ -32,7 +32,7 @@ if __name__ == "__main__":
 	# training model
 	with tf.Session() as sess:
 		# model configuration
-		batch_size       = 10
+		batch_size       = 5
 		epoches          = 10
 
 		ppg = RL_Hawkes_Generator(T=[0., 10.], S=[[-1., 1.], [-1., 1.]], maximum=1e+3)
@@ -40,5 +40,5 @@ if __name__ == "__main__":
 		ppg.train(sess,
 			batch_size, epoches, 
 			expert_seq_t, expert_seq_l,
-			lr=1e-5,
+			lr=1e-4,
 			trainplot=False)

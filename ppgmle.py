@@ -11,7 +11,7 @@ class MLE_Hawkes_Generator(object):
     Reinforcement Learning Based Point Process Generator
     """
 
-    def __init__(self, T, S, batch_size, C=1., maximum=1e+4, data_dim=3, keep_latest_k=4, lr=1e-3):
+    def __init__(self, T, S, batch_size, C=1., maximum=1e+4, data_dim=3, keep_latest_k=None, lr=1e-3):
         """
         Params:
         - T: the maximum time of the sequences
@@ -28,10 +28,10 @@ class MLE_Hawkes_Generator(object):
         self.hawkes     = SpatialTemporalHawkes(T, S, C=C, maximum=maximum, verbose=False)
         # input tensors: expert sequences (time, location, marks)
         self.input_seqs = tf.placeholder(tf.float32, [batch_size, None, data_dim]) # [batch_size, seq_len, data_dim]
-        self.cost       = -1 * self.log_likelihood()
+        self.cost       = -1 * self.log_likelihood(keep_latest_k=keep_latest_k)
         self.optimizer  = tf.train.GradientDescentOptimizer(lr).minimize(self.cost)
 
-    def log_likelihood(self):
+    def log_likelihood(self, keep_latest_k):
         """
         compute the log-likelihood of the input data given the hawkes point process. 
         """
@@ -44,7 +44,7 @@ class MLE_Hawkes_Generator(object):
             seq_len   = tf.shape(trunc_seq)[0]
             # calculate the log conditional pdf for each of data points in the sequence.
             loglikli += tf.reduce_sum(tf.scan(
-                lambda a, i: self.hawkes.log_conditional_pdf(trunc_seq[:i, :], keep_latest_k=4),
+                lambda a, i: self.hawkes.log_conditional_pdf(trunc_seq[:i, :], keep_latest_k=keep_latest_k),
                 tf.range(1, seq_len+1), # from the first point to the last point
                 initializer=np.array(0., dtype=np.float32)))
         return loglikli
@@ -100,16 +100,17 @@ class MLE_Hawkes_Generator(object):
 if __name__ == "__main__":
     seqs = np.load('../Spatio-Temporal-Point-Process-Simulator/results/hpp_Feb_18.npy')
     print(seqs.shape)
+    print(min([ len(np.nonzero(seq[:, 0])) for seq in seqs ]))
 
     # training model
     with tf.Session() as sess:
         # model configuration
         batch_size       = 20
-        epoches          = 5
+        epoches          = 10
 
         ppg = MLE_Hawkes_Generator(
             T=[0., 10.], S=[[-1., 1.], [-1., 1.]], 
             batch_size=batch_size, maximum=1e+4, data_dim=3, 
-            keep_latest_k=8, lr=1e-4)
+            keep_latest_k=30, lr=1e-4)
 
         ppg.train(sess, epoches, seqs)

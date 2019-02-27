@@ -24,31 +24,29 @@ class RL_Hawkes_Generator(object):
         self.T = T # maximum time
         self.S = S # location space
         # Hawkes process generator
-        self.hawkes = SpatialTemporalHawkes(C=C, maximum=maximum, verbose=False)
+        self.hawkes = SpatialTemporalHawkes(T, S, C=C, maximum=maximum, verbose=False)
     
-    def _rebulid_policy_optimizer(self, sess, batch_size, lr=1e-3):
+    def _rebulid_policy_optimizer(self, sess, batch_size, lr=1e-3, keep_latest_k=10):
         """
         """
-        # # generated tensors: learner sequences (time, location, loglikelihood)
-        # learner_seq_t, learner_seq_l, learner_seq_loglik = self.hawkes.get_learner_seqs(sess, self.T, self.S, batch_size)
+        # generated tensors: learner sequences (time, location, loglikelihood)
+        learner_seq_t, learner_seq_l, learner_seq_loglik = self.hawkes.get_learner_seqs(sess, batch_size, keep_latest_k)
 
-        # # concatenate batches in the sequences
-        # expert_seq_t,  expert_seq_l = \
-        #     self.__concatenate_batch(self.input_seq_t), \
-        #     self.__concatenate_batch(self.input_seq_l)
-        # learner_seq_t, learner_seq_l, learner_seq_loglik = \
-        #     self.__concatenate_batch(learner_seq_t), \
-        #     self.__concatenate_batch(learner_seq_l), \
-        #     self.__concatenate_batch(learner_seq_loglik)
-        # print("[%s] rebuiding reward." % arrow.now(), file=sys.stderr)
-        # # calculate average rewards
-        # reward = self._reward(batch_size, self.T[0], self.T[1],\
-        #                       expert_seq_t,  expert_seq_l, learner_seq_t, learner_seq_l) # [batch_size*seq_len, 1]
-        # print("[%s] rebuilding optimizer." % arrow.now(), file=sys.stderr)
-        # # # cost and optimizer
-        # self.cost      = tf.reduce_sum(tf.multiply(reward, learner_seq_loglik), axis=0)
-
-        self.cost      = - tf.reduce_sum(learner_seq_loglik)
+        # concatenate batches in the sequences
+        expert_seq_t,  expert_seq_l = \
+            self.__concatenate_batch(self.input_seq_t), \
+            self.__concatenate_batch(self.input_seq_l)
+        learner_seq_t, learner_seq_l, learner_seq_loglik = \
+            self.__concatenate_batch(learner_seq_t), \
+            self.__concatenate_batch(learner_seq_l), \
+            self.__concatenate_batch(learner_seq_loglik)
+        print("[%s] rebuiding reward." % arrow.now(), file=sys.stderr)
+        # calculate average rewards
+        reward = self._reward(batch_size, self.T[0], self.T[1],\
+                              expert_seq_t,  expert_seq_l, learner_seq_t, learner_seq_l) # [batch_size*seq_len, 1]
+        print("[%s] rebuilding optimizer." % arrow.now(), file=sys.stderr)
+        # cost and optimizer
+        self.cost      = tf.reduce_sum(tf.multiply(reward, learner_seq_loglik), axis=0)
         self.optimizer = tf.train.GradientDescentOptimizer(lr).minimize(self.cost)
 
     def _reward(self, batch_size, t0, T, 
@@ -64,10 +62,10 @@ class RL_Hawkes_Generator(object):
         expert_learner_kernel_mask  = tf.matmul(expert_seq_mask, tf.transpose(learner_seq_mask))
         # concatenate each data dimension for both expert sequence and learner sequence
         # TODO: Add mark to the sequences
-        # expert_seq  = tf.concat([expert_seq_t, expert_seq_l], axis=1)   # [batch_size*seq_len, t_dim+l_dim+m_dim]
-        # learner_seq = tf.concat([learner_seq_t, learner_seq_l], axis=1) # [batch_size*seq_len, t_dim+l_dim+m_dim]
-        expert_seq  = tf.concat([expert_seq_l], axis=1)                          # [batch_size*seq_len, t_dim]
-        learner_seq = tf.concat([learner_seq_l], axis=1)                         # [batch_size*seq_len, t_dim]
+        expert_seq  = tf.concat([expert_seq_t, expert_seq_l], axis=1)   # [batch_size*seq_len, t_dim+l_dim]
+        learner_seq = tf.concat([learner_seq_t, learner_seq_l], axis=1) # [batch_size*seq_len, t_dim+l_dim]
+        # expert_seq  = tf.concat([expert_seq_l], axis=1)                          # [batch_size*seq_len, t_dim]
+        # learner_seq = tf.concat([learner_seq_l], axis=1)                         # [batch_size*seq_len, t_dim]
         # calculate upper-half kernel matrix
         learner_learner_kernel, expert_learner_kernel = self.__kernel_matrix(
             learner_seq, expert_seq, kernel_bandwidth)                           # 2 * [batch_size*seq_len, batch_size*seq_len]
