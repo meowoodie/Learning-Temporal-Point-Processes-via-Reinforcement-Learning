@@ -32,7 +32,7 @@ if __name__ == "__main__":
 	# training model
 	with tf.Session() as sess:
 		# model configuration
-		batch_size       = 5
+		batch_size       = 10
 		epoches          = 10
 
 		ppg = RL_Hawkes_Generator(T=[0., 10.], S=[[-1., 1.], [-1., 1.]], maximum=1e+3)
@@ -40,5 +40,5 @@ if __name__ == "__main__":
 		ppg.train(sess,
 			batch_size, epoches, 
 			expert_seq_t, expert_seq_l,
-			lr=1e-4,
+			lr=1e-6,
 			trainplot=False)
