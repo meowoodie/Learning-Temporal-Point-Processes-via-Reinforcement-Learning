@@ -34,22 +34,10 @@ class SpatialTemporalHawkes(object):
         self.T       = T       # time space
         self.S       = S       # location space
         self.maximum = maximum # upper bound of conditional intensity
-        self.mu      = tf.get_variable(
-            name="mu", 
-            initializer=tf.constant(INIT_PARA_FACTOR), dtype=tf.float32)
-            # initializer=INIT_PARA_FACTOR * tf.random_uniform(shape=(), minval=0, maxval=1), dtype=tf.float32)
-        self.beta    = tf.get_variable(
-            name="beta", 
-            initializer=tf.constant(INIT_PARA_FACTOR), dtype=tf.float32)
-            # initializer=INIT_PARA_FACTOR * tf.random_uniform(shape=(), minval=0, maxval=1), dtype=tf.float32)
-        self.sigma_x = tf.get_variable(
-            name="sigma_x", 
-            initializer=tf.constant(INIT_PARA_FACTOR), dtype=tf.float32)
-            # initializer=INIT_PARA_FACTOR * tf.random_uniform(shape=(), minval=0, maxval=1), dtype=tf.float32)
-        self.sigma_y = tf.get_variable(
-            name="sigma_y", 
-            initializer=tf.constant(INIT_PARA_FACTOR), dtype=tf.float32)
-            # initializer=INIT_PARA_FACTOR * tf.random_uniform(shape=(), minval=0, maxval=1), dtype=tf.float32)
+        self.mu      = tf.get_variable(name="mu", initializer=tf.constant(INIT_PARA_FACTOR), dtype=tf.float32)
+        self.beta    = tf.get_variable(name="beta", initializer=tf.constant(INIT_PARA_FACTOR), dtype=tf.float32)
+        self.sigma_x = tf.get_variable(name="sigma_x", initializer=tf.constant(INIT_PARA_FACTOR), dtype=tf.float32)
+        self.sigma_y = tf.get_variable(name="sigma_y", initializer=tf.constant(INIT_PARA_FACTOR), dtype=tf.float32)
         self.verbose = verbose
 
     def _sampling(self, sess, batch_size):
@@ -139,7 +127,7 @@ class SpatialTemporalHawkes(object):
             log_cond_pdf  = tf.concat([log_cond_pdf, padding_zeros], axis=0)
             log_cond_pdfs.append(log_cond_pdf)
         log_cond_pdfs = tf.expand_dims(tf.stack(log_cond_pdfs, axis=0), -1)
-        return tf.expand_dims(seqs[:, :, 0], -1), seqs[:, :, 1:], log_cond_pdfs
+        return seqs, log_cond_pdfs
 
 
 
@@ -356,11 +344,11 @@ if __name__ == "__main__":
         init_op = tf.global_variables_initializer()
         sess.run(init_op)
 
-        r = hawkes.log_conditional_pdf(points[:tf.constant(5, dtype=tf.int32), :])
+        # r = hawkes.log_conditional_pdf(points[:tf.constant(1, dtype=tf.int32), :])
 
-        # r = tf.scan(
-        #     lambda a, i: hawkes.log_conditional_pdf(points[:i, :]),
-        #     tf.range(1, tf.shape(points)[0]+1), # from the first point to the last point
-        #     initializer=np.array(0., dtype=np.float32))
+        r = tf.scan(
+            lambda a, i: hawkes.log_conditional_pdf(points[:i, :]),
+            tf.range(1, tf.shape(points)[0]+1), # from the first point to the last point
+            initializer=np.array(0., dtype=np.float32))
 
         print(sess.run(r))
