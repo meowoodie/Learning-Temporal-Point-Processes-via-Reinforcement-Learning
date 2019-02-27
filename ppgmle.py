@@ -100,7 +100,6 @@ class MLE_Hawkes_Generator(object):
 if __name__ == "__main__":
     seqs = np.load('../Spatio-Temporal-Point-Process-Simulator/results/hpp_Feb_18.npy')
     print(seqs.shape)
-    print(min([ len(np.nonzero(seq[:, 0])) for seq in seqs ]))
 
     # training model
     with tf.Session() as sess:
