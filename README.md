@@ -96,19 +96,9 @@ Below are generated test actions.
         [ 0.        ,  0.        ,  0.        ]], dtype=float32)
 ```
 
-Experiments Results
----
-
-##### Homogeneous (rate=1.) Poisson Point Process
-The GIF below shows the process that the distribution of interval time (delta) between generated points converge to exponential distribution with rate 1.0.
-![poisson-exp](https://github.com/meowoodie/Imitation-Learning-for-Point-Process/blob/master/results/poisson_exp.gif)
-
 > Exponential Q-Q Plot
 
-##### Atlanta 911 Calls
-
-##### MIMIC-III
-
-
-
-> A runnable demo has been attached to this repo in `demo.py`.
+References
+---
+- [Shuang Li, Shuai Xiao, Shixiang Zhu, Nan Du, Yao Xie, Le Song. "Learning Temporal Point Processes via Reinforcement Learning
+"](https://arxiv.org/abs/1811.05016)
