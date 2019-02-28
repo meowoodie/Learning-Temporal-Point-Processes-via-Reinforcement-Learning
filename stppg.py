@@ -153,7 +153,7 @@ class SpatialTemporalPointProcess(object):
                 (arrow.now(), retained_points.shape, self.lam), file=sys.stderr)
         return retained_points
 
-    def generate(self, T=[0, 1], S=[[0, 1], [0, 1]], batch_size=10, min_n_points=5, verbose=True):
+    def generate(self, T=[0, 1], S=[[0, 1], [0, 1]], batch_size=10, min_n_points=1, verbose=True):
         """
         generate spatio-temporal points given lambda and kernel function
         """
