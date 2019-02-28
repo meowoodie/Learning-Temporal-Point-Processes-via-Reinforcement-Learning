@@ -11,7 +11,7 @@ class MLE_Hawkes_Generator(object):
     Reinforcement Learning Based Point Process Generator
     """
 
-    def __init__(self, T, S, batch_size, C=1., maximum=1e+4, data_dim=3, keep_latest_k=None, lr=1e-3):
+    def __init__(self, T, S, batch_size, C=1., data_dim=3, keep_latest_k=None, lr=1e-3):
         """
         Params:
         - T: the maximum time of the sequences
@@ -25,10 +25,10 @@ class MLE_Hawkes_Generator(object):
         """
         self.batch_size = batch_size
         # Hawkes process
-        self.hawkes     = SpatialTemporalHawkes(T, S, C=C, maximum=maximum, verbose=False)
+        self.hawkes     = SpatialTemporalHawkes(T, S, C=C, verbose=False)
         # input tensors: expert sequences (time, location, marks)
         self.input_seqs = tf.placeholder(tf.float32, [batch_size, None, data_dim]) # [batch_size, seq_len, data_dim]
-        self.cost       = -1 * self.log_likelihood(keep_latest_k=keep_latest_k)
+        self.cost       = -1 * self.log_likelihood(keep_latest_k=keep_latest_k) / batch_size
         self.optimizer  = tf.train.GradientDescentOptimizer(lr).minimize(self.cost)
 
     def log_likelihood(self, keep_latest_k):
@@ -104,12 +104,20 @@ if __name__ == "__main__":
     # training model
     with tf.Session() as sess:
         # model configuration
-        batch_size       = 20
+        # batch_size       = 20
+        # epoches          = 10
+
+        # ppg = MLE_Hawkes_Generator(
+        #     T=[0., 10.], S=[[-1., 1.], [-1., 1.]], 
+        #     batch_size=batch_size, data_dim=3, 
+        #     keep_latest_k=30, lr=1e-4)
+        # ppg.train(sess, epoches, seqs)
+
+        batch_size       = 50
         epoches          = 10
 
         ppg = MLE_Hawkes_Generator(
             T=[0., 10.], S=[[-1., 1.], [-1., 1.]], 
-            batch_size=batch_size, maximum=1e+4, data_dim=3, 
-            keep_latest_k=30, lr=1e-4)
-
+            batch_size=batch_size, data_dim=3, 
+            keep_latest_k=None, lr=1e-4)
         ppg.train(sess, epoches, seqs)

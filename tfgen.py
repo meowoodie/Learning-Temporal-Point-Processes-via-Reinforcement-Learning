@@ -327,8 +327,7 @@ class MarkedSpatialTemporalLSTM(object):
         return m, loglik
 
 if __name__ == "__main__":
-    # training model
-    # tf.set_random_seed(1)
+    # Unittest example
     with tf.Session() as sess:
         hawkes = SpatialTemporalHawkes(T=[0., 3.], S=[[-1., 1.], [-1., 1.]], maximum=1e+3)
 
@@ -343,8 +342,6 @@ if __name__ == "__main__":
 
         init_op = tf.global_variables_initializer()
         sess.run(init_op)
-
-        # r = hawkes.log_conditional_pdf(points[:tf.constant(1, dtype=tf.int32), :])
 
         r = tf.scan(
             lambda a, i: hawkes.log_conditional_pdf(points[:i, :]),
