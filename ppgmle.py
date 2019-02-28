@@ -28,10 +28,10 @@ class MLE_Hawkes_Generator(object):
         self.hawkes     = SpatialTemporalHawkes(T, S, C=C, verbose=False)
         # input tensors: expert sequences (time, location, marks)
         self.input_seqs = tf.placeholder(tf.float32, [batch_size, None, data_dim]) # [batch_size, seq_len, data_dim]
-        self.cost       = -1 * self.log_likelihood(keep_latest_k=keep_latest_k) / batch_size
+        self.cost       = -1 * self.log_likelihood(S, keep_latest_k=keep_latest_k) / batch_size
         self.optimizer  = tf.train.GradientDescentOptimizer(lr).minimize(self.cost)
 
-    def log_likelihood(self, keep_latest_k):
+    def log_likelihood(self, S, keep_latest_k):
         """
         compute the log-likelihood of the input data given the hawkes point process. 
         """
@@ -44,7 +44,7 @@ class MLE_Hawkes_Generator(object):
             seq_len   = tf.shape(trunc_seq)[0]
             # calculate the log conditional pdf for each of data points in the sequence.
             loglikli += tf.reduce_sum(tf.scan(
-                lambda a, i: self.hawkes.log_conditional_pdf(trunc_seq[:i, :], keep_latest_k=keep_latest_k),
+                lambda a, i: self.hawkes.log_conditional_pdf(trunc_seq[:i, :], S, keep_latest_k=keep_latest_k),
                 tf.range(1, seq_len+1), # from the first point to the last point
                 initializer=np.array(0., dtype=np.float32)))
         return loglikli

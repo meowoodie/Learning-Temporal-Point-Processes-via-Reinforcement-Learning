@@ -35,17 +35,17 @@ class RL_Hawkes_Generator(object):
         learner_seqs, learner_seqs_loglik = self.hawkes.get_learner_seqs(sess, batch_size, keep_latest_k)
 
         # concatenate batches in the sequences
-        expert_seqs         = self.__concatenate_batch(self.input_seqs)      # [batch_size * expert_seq_len, data_dim]
-        learner_seqs        = self.__concatenate_batch(learner_seqs)         # [batch_size * learner_seq_len, data_dim]
-        learner_seqs_loglik = self.__concatenate_batch(learner_seqs_loglik)  # [batch_size * learner_seq_len, 1]
+        concat_expert_seq         = self.__concatenate_batch(self.input_seqs)      # [batch_size * expert_seq_len, data_dim]
+        concat_learner_seq        = self.__concatenate_batch(learner_seqs)         # [batch_size * learner_seq_len, data_dim]
+        concat_learner_seq_loglik = self.__concatenate_batch(learner_seqs_loglik)  # [batch_size * learner_seq_len, 1]
 
         # calculate average rewards
-        print("[%s] rebuiding reward." % arrow.now(), file=sys.stderr)
-        reward = self._reward(expert_seqs, learner_seqs) 
+        print("[%s] rebuilding reward." % arrow.now(), file=sys.stderr)
+        reward = self._reward(concat_expert_seq, concat_learner_seq) 
 
         # cost and optimizer
         print("[%s] rebuilding optimizer." % arrow.now(), file=sys.stderr)
-        self.cost      = tf.reduce_sum(tf.multiply(reward, learner_seqs_loglik), axis=0)
+        self.cost      = tf.reduce_sum(tf.multiply(reward, concat_learner_seq_loglik), axis=0)
         self.optimizer = tf.train.GradientDescentOptimizer(lr).minimize(self.cost)
 
     def _reward(self, expert_seq, learner_seq, kernel_bandwidth=0.5): 
