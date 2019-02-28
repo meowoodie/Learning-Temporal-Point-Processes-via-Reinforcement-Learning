@@ -98,23 +98,14 @@ class MLE_Hawkes_Generator(object):
         print(sess.run([self.hawkes.mu, self.hawkes.beta, self.hawkes.sigma_x, self.hawkes.sigma_y]))
 
 if __name__ == "__main__":
+    # Unittest example
     seqs = np.load('../Spatio-Temporal-Point-Process-Simulator/results/hpp_Feb_18.npy')
     print(seqs.shape)
 
     # training model
     with tf.Session() as sess:
-        # model configuration
-        # batch_size       = 20
-        # epoches          = 10
-
-        # ppg = MLE_Hawkes_Generator(
-        #     T=[0., 10.], S=[[-1., 1.], [-1., 1.]], 
-        #     batch_size=batch_size, data_dim=3, 
-        #     keep_latest_k=30, lr=1e-4)
-        # ppg.train(sess, epoches, seqs)
-
         batch_size       = 50
-        epoches          = 10
+        epoches          = 15
 
         ppg = MLE_Hawkes_Generator(
             T=[0., 10.], S=[[-1., 1.], [-1., 1.]], 
