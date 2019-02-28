@@ -13,7 +13,7 @@ class RL_Hawkes_Generator(object):
     Reinforcement Learning Based Point Process Generator
     """
 
-    def __init__(self, T, S, C=1., maximum=1e+4):
+    def __init__(self, T, S, batch_size, C=1., maximum=1e+3, keep_latest_k=None, lr=1e-5):
         """
         Params:
         - T: the maximum time of the sequences
@@ -21,31 +21,62 @@ class RL_Hawkes_Generator(object):
         - C: the constant in diffusion kernel
         """
         # model hyper-parameters
-        self.T = T # maximum time
-        self.S = S # location space
+        self.T          = T          # time space
+        self.S          = S          # location space
+        self.batch_size = batch_size # batch size
+        self.maximum    = maximum    # upper bound of the conditional intensity
         # Hawkes process generator
-        self.hawkes = SpatialTemporalHawkes(T, S, C=C, maximum=maximum, verbose=False)
+        self.hawkes     = SpatialTemporalHawkes(T, S, C=C, maximum=maximum, verbose=False)
+        # input tensors: expert sequences (time, location)
+        self.input_expert_seqs   = tf.placeholder(tf.float32, [batch_size, None, 3])
+        self.input_learner_seqs  = tf.placeholder(tf.float32, [batch_size, None, 3])
+        self.learner_seqs_loglik = self._log_likelihood(learner_seqs=self.input_learner_seqs , keep_latest_k=keep_latest_k)
+        # build policy optimizer
+        self._policy_optimizer(
+            expert_seqs=self.input_expert_seqs, 
+            learner_seqs=self.input_learner_seqs,
+            learner_seqs_loglik=self.learner_seqs_loglik, 
+            lr=lr)
     
-    def _rebulid_policy_optimizer(self, sess, batch_size, lr=1e-3, keep_latest_k=None):
+    def _log_likelihood(self, learner_seqs, keep_latest_k):
         """
+        compute the log-likelihood of the input data given the hawkes point process. 
         """
-        # generated tensors: learner sequences (time, location, loglikelihood)
-        # - learner_seqs:        [batch_size, seq_len, data_dim]
-        # - learner_seqs_loglik: [batch_size, seq_len, 1]
-        learner_seqs, learner_seqs_loglik = self.hawkes.get_learner_seqs(sess, batch_size, keep_latest_k)
+        # max length of the sequence in learner_seqs
+        max_len   = tf.shape(learner_seqs)[1]
+        # log-likelihoods
+        logliklis = []
+        for b in range(self.batch_size):
+            seq       = learner_seqs[b, :, :]
+            mask_t    = tf.cast(seq[:, 0] > 0, tf.float32)
+            trunc_seq = tf.boolean_mask(seq, mask_t)
+            seq_len   = tf.shape(trunc_seq)[0]
+            # calculate the log conditional pdf for each of data points in the sequence.
+            loglikli  = tf.scan(
+                lambda a, i: self.hawkes.log_conditional_pdf(trunc_seq[:i, :], keep_latest_k=keep_latest_k),
+                tf.range(1, seq_len+1), # from the first point to the last point
+                initializer=np.array(0., dtype=np.float32))
+            # padding zeros for loglikli
+            paddings  = tf.zeros(max_len - seq_len, dtype=tf.float32)
+            loglikli  = tf.concat([loglikli, paddings], axis=0)
+            logliklis.append(loglikli)
+        logliklis = tf.expand_dims(tf.stack(logliklis, axis=0), -1)
+        return logliklis
 
+    def _policy_optimizer(self, expert_seqs, learner_seqs, learner_seqs_loglik, lr):
+        """policy optimizer"""
         # concatenate batches in the sequences
-        concat_expert_seq         = self.__concatenate_batch(self.input_seqs)      # [batch_size * expert_seq_len, data_dim]
+        concat_expert_seq         = self.__concatenate_batch(expert_seqs)          # [batch_size * expert_seq_len, data_dim]
         concat_learner_seq        = self.__concatenate_batch(learner_seqs)         # [batch_size * learner_seq_len, data_dim]
         concat_learner_seq_loglik = self.__concatenate_batch(learner_seqs_loglik)  # [batch_size * learner_seq_len, 1]
 
         # calculate average rewards
-        print("[%s] rebuilding reward." % arrow.now(), file=sys.stderr)
+        print("[%s] building reward." % arrow.now(), file=sys.stderr)
         reward = self._reward(concat_expert_seq, concat_learner_seq) 
 
         # cost and optimizer
-        print("[%s] rebuilding optimizer." % arrow.now(), file=sys.stderr)
-        self.cost      = tf.reduce_sum(tf.multiply(reward, concat_learner_seq_loglik), axis=0)
+        print("[%s] building optimizer." % arrow.now(), file=sys.stderr)
+        self.cost      = tf.reduce_sum(tf.multiply(reward, concat_learner_seq_loglik), axis=0) / self.batch_size
         self.optimizer = tf.train.GradientDescentOptimizer(lr).minimize(self.cost)
 
     def _reward(self, expert_seq, learner_seq, kernel_bandwidth=0.5): 
@@ -93,16 +124,12 @@ class RL_Hawkes_Generator(object):
         expert_learner_mat  = tf.exp(-expert_learner_mat / kernel_bandwidth)
         return learner_learner_mat, expert_learner_mat
 
-    def train(self, sess, batch_size, 
+    def train(self, sess, 
             epoches,               # number of epoches (how many times is the entire dataset going to be trained)
             expert_seqs,           # [n, seq_len, 3]
             trainplot=True,        # plot the change of intensity over epoches
-            lr=1e-2,               # learning rate
-            keep_latest_k=None,    # keep the latest k points when calculating likelihood
             pretrained=False):
         """Train the point process generator given expert sequences."""
-        # input tensors: expert sequences (time, location)
-        self.input_seqs = tf.placeholder(tf.float32, [batch_size, None, 3])
 
         # initialization
         if not pretrained:
@@ -115,10 +142,10 @@ class RL_Hawkes_Generator(object):
         # - number of expert sequences
         n_data    = expert_seqs.shape[0]
         # - number of batches
-        n_batches = int(n_data / batch_size)
+        n_batches = int(n_data / self.batch_size)
         
         if trainplot:
-            ppim = utils.PointProcessIntensityMeter(self.T[1], batch_size)
+            ppim = utils.PointProcessIntensityMeter(self.T[1], self.batch_size)
 
         # training over epoches
         for epoch in range(epoches):
@@ -129,29 +156,34 @@ class RL_Hawkes_Generator(object):
             # training over batches
             avg_train_cost = []
             for b in range(n_batches):
-                idx             = np.arange(batch_size * b, batch_size * (b + 1))
+                idx             = np.arange(self.batch_size * b, self.batch_size * (b + 1))
                 # training and testing indices selected in current batch
                 batch_train_ids = shuffled_ids[idx]
                 # training and testing batch data
-                batch_train_expert = expert_seqs[batch_train_ids, :, :]
-                self._rebulid_policy_optimizer(sess, batch_size, lr, keep_latest_k)
+                batch_train_expert  = expert_seqs[batch_train_ids, :, :]
+                batch_train_learner = self.hawkes.sampling(sess, self.batch_size)
                 # optimization procedure
-                sess.run(self.optimizer, feed_dict={self.input_seqs: batch_train_expert})
+                sess.run(self.optimizer, feed_dict={
+                    self.input_expert_seqs:  batch_train_expert, 
+                    self.input_learner_seqs: batch_train_learner})
                 # cost for train batch and test batch
-                train_cost = sess.run(self.cost, feed_dict={self.input_seqs: batch_train_expert})
+                train_cost = sess.run(self.cost, feed_dict={
+                    self.input_expert_seqs:  batch_train_expert, 
+                    self.input_learner_seqs: batch_train_learner})
                 print("[%s] batch training cost: %.2f." % (arrow.now(), train_cost), file=sys.stderr)
                 # record cost for each batch
                 avg_train_cost.append(train_cost)
 
             if trainplot:
                 # update intensity plot
-                learner_seqs, _ = self.hawkes.get_learner_seqs(sess, batch_size, keep_latest_k=None)
+                learner_seqs, _ = self.hawkes.get_learner_seqs(sess, self.batch_size, keep_latest_k=None)
                 ppim.update_time_intensity(batch_train_expert[:, : , 0], learner_seqs[:, :, 0])
                 ppim.update_location_intensity(batch_train_expert[:, : , 1:], learner_seqs[:, :, 1:])
 
             # training log output
             avg_train_cost = np.mean(avg_train_cost)
-            print('[%s] Epoch %d (n_train_batches=%d, batch_size=%d)' % (arrow.now(), epoch, n_batches, batch_size), file=sys.stderr)
+            print('[%s] Epoch %d (n_train_batches=%d, batch_size=%d)' % \
+                (arrow.now(), epoch, n_batches, self.batch_size), file=sys.stderr)
             print('[%s] Training cost:\t%f' % (arrow.now(), avg_train_cost), file=sys.stderr)
 
 

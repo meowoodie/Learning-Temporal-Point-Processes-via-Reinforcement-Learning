@@ -44,7 +44,7 @@ class MLE_Hawkes_Generator(object):
             seq_len   = tf.shape(trunc_seq)[0]
             # calculate the log conditional pdf for each of data points in the sequence.
             loglikli += tf.reduce_sum(tf.scan(
-                lambda a, i: self.hawkes.log_conditional_pdf(trunc_seq[:i, :], S, keep_latest_k=keep_latest_k),
+                lambda a, i: self.hawkes.log_conditional_pdf(trunc_seq[:i, :], keep_latest_k=keep_latest_k),
                 tf.range(1, seq_len+1), # from the first point to the last point
                 initializer=np.array(0., dtype=np.float32)))
         return loglikli

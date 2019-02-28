@@ -29,30 +29,30 @@ class SpatialTemporalHawkes(object):
     def __init__(self, T, S, C=1., maximum=1e+4, verbose=False):
         """
         """
-        INIT_PARA_FACTOR = 5e-2
+        INIT_PARAM   = 5e-2
         self.C       = C       # constant
         self.T       = T       # time space
         self.S       = S       # location space
         self.maximum = maximum # upper bound of conditional intensity
-        self.mu      = tf.get_variable(name="mu", initializer=tf.constant(INIT_PARA_FACTOR), dtype=tf.float32)
-        self.beta    = tf.get_variable(name="beta", initializer=tf.constant(INIT_PARA_FACTOR), dtype=tf.float32)
-        self.sigma_x = tf.get_variable(name="sigma_x", initializer=tf.constant(INIT_PARA_FACTOR), dtype=tf.float32)
-        self.sigma_y = tf.get_variable(name="sigma_y", initializer=tf.constant(INIT_PARA_FACTOR), dtype=tf.float32)
+        self.mu      = tf.get_variable(name="mu", initializer=tf.constant(INIT_PARAM), dtype=tf.float32)
+        self.beta    = tf.get_variable(name="beta", initializer=tf.constant(INIT_PARAM), dtype=tf.float32)
+        self.sigma_x = tf.get_variable(name="sigma_x", initializer=tf.constant(INIT_PARAM), dtype=tf.float32)
+        self.sigma_y = tf.get_variable(name="sigma_y", initializer=tf.constant(INIT_PARAM), dtype=tf.float32)
         self.verbose = verbose
 
-    def _sampling(self, sess, batch_size):
+    def sampling(self, sess, batch_size):
         """
         """
         # get current model parameters
         mu, beta, sigma_x, sigma_y = sess.run([self.mu, self.beta, self.sigma_x, self.sigma_y])
         print("[%s] mu=%.5f, beta=%.5f, sigma_x=%.5f, sigma_y=%.5f." % (arrow.now(), mu, beta, sigma_x, sigma_y), file=sys.stderr)
         # sampling points given model parameters
-        kernel        = DiffusionKernel(beta=beta, sigma_x=sigma_x, sigma_y=sigma_y)
-        lam           = HawkesLam(mu, kernel, maximum=self.maximum)
-        pp            = SpatialTemporalPointProcess(lam)
-        seqs, sizes   = pp.generate(T=self.T, S=self.S, batch_size=batch_size, verbose=self.verbose)
+        kernel      = DiffusionKernel(beta=beta, sigma_x=sigma_x, sigma_y=sigma_y)
+        lam         = HawkesLam(mu, kernel, maximum=self.maximum)
+        pp          = SpatialTemporalPointProcess(lam)
+        seqs, sizes = pp.generate(T=self.T, S=self.S, batch_size=batch_size, verbose=self.verbose)
         print(sizes)
-        return tf.constant(seqs, dtype=tf.float32), sizes
+        return seqs
 
     def _kernel(self, x, y, t):
         """
@@ -108,27 +108,7 @@ class SpatialTemporalHawkes(object):
             pdf_with_history) # if there is more than one point in the sequence
 
         return log_cond_pdf
-    
-    def get_learner_seqs(self, sess, batch_size, keep_latest_k):
-        """
-        generate learner sequences as well as their corresponding element-wise log-likelihood.
-        """
-        seqs, sizes = self._sampling(sess, batch_size)
-        # calculate log conditional pdf for each of data points
-        log_cond_pdfs = []
-        for b in range(batch_size):
-            points        = seqs[b, :, :]
-            n_paddings    = points.shape[0] - sizes[b]
-            log_cond_pdf  = tf.scan(
-                lambda a, i: self.log_conditional_pdf(points[:i, :], keep_latest_k),
-                tf.range(1, sizes[b]+1), # from the first point to the last point
-                initializer=np.array(0., dtype=np.float32))
-            padding_zeros = tf.zeros(n_paddings, dtype=tf.float32)
-            log_cond_pdf  = tf.concat([log_cond_pdf, padding_zeros], axis=0)
-            log_cond_pdfs.append(log_cond_pdf)
-        log_cond_pdfs = tf.expand_dims(tf.stack(log_cond_pdfs, axis=0), -1)
-        return seqs, log_cond_pdfs
-
+        
 
 
 class MarkedSpatialTemporalLSTM(object):
