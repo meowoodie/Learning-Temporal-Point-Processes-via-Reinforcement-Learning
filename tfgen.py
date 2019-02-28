@@ -35,7 +35,7 @@ class SpatialTemporalHawkes(object):
         self.S       = S       # location space
         self.maximum = maximum # upper bound of conditional intensity
         self.mu      = tf.get_variable(name="mu", initializer=tf.constant(INIT_PARAM), dtype=tf.float32)
-        self.beta    = tf.get_variable(name="beta", initializer=tf.constant(INIT_PARAM), dtype=tf.float32)
+        self.beta    = tf.get_variable(name="beta", initializer=tf.constant(2.), dtype=tf.float32)
         self.sigma_x = tf.get_variable(name="sigma_x", initializer=tf.constant(INIT_PARAM), dtype=tf.float32)
         self.sigma_y = tf.get_variable(name="sigma_y", initializer=tf.constant(INIT_PARAM), dtype=tf.float32)
         self.verbose = verbose
@@ -51,7 +51,6 @@ class SpatialTemporalHawkes(object):
         lam         = HawkesLam(mu, kernel, maximum=self.maximum)
         pp          = SpatialTemporalPointProcess(lam)
         seqs, sizes = pp.generate(T=self.T, S=self.S, batch_size=batch_size, verbose=self.verbose)
-        print(sizes)
         return seqs
 
     def _kernel(self, x, y, t):
@@ -108,7 +107,7 @@ class SpatialTemporalHawkes(object):
             pdf_with_history) # if there is more than one point in the sequence
 
         return log_cond_pdf
-        
+
 
 
 class MarkedSpatialTemporalLSTM(object):
