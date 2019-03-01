@@ -34,10 +34,10 @@ class SpatialTemporalHawkes(object):
         self.T       = T       # time space
         self.S       = S       # location space
         self.maximum = maximum # upper bound of conditional intensity
-        self.mu      = tf.get_variable(name="mu", initializer=tf.constant(INIT_PARAM), dtype=tf.float32)
-        self.beta    = tf.get_variable(name="beta", initializer=tf.constant(0.1), dtype=tf.float32)
-        self.sigma_x = tf.get_variable(name="sigma_x", initializer=tf.constant(INIT_PARAM), dtype=tf.float32)
-        self.sigma_y = tf.get_variable(name="sigma_y", initializer=tf.constant(INIT_PARAM), dtype=tf.float32)
+        self.mu      = tf.get_variable(name="mu", initializer=tf.constant(0.01), dtype=tf.float32)
+        self.beta    = tf.get_variable(name="beta", initializer=tf.constant(0.01), dtype=tf.float32)
+        self.sigma_x = tf.get_variable(name="sigma_x", initializer=tf.constant(0.01), dtype=tf.float32)
+        self.sigma_y = tf.get_variable(name="sigma_y", initializer=tf.constant(0.01), dtype=tf.float32)
         self.verbose = verbose
 
     def sampling(self, sess, batch_size):

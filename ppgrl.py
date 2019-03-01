@@ -13,7 +13,7 @@ class RL_Hawkes_Generator(object):
     Reinforcement Learning Based Point Process Generator
     """
 
-    def __init__(self, T, S, batch_size, C=1., maximum=1e+3, keep_latest_k=None, lr=1e-5):
+    def __init__(self, T, S, batch_size, C=1., maximum=1e+3, keep_latest_k=None, lr=1e-5, eps=0.2):
         """
         Params:
         - T: the maximum time of the sequences
@@ -28,13 +28,15 @@ class RL_Hawkes_Generator(object):
         # Hawkes process generator
         self.hawkes     = SpatialTemporalHawkes(T, S, C=C, maximum=maximum, verbose=False)
         # input tensors: expert sequences (time, location)
-        self.input_expert_seqs   = tf.placeholder(tf.float32, [batch_size, None, 3])
-        self.input_learner_seqs  = tf.placeholder(tf.float32, [batch_size, None, 3])
-        self.learner_seqs_loglik = self._log_likelihood(learner_seqs=self.input_learner_seqs , keep_latest_k=keep_latest_k)
+        self.input_expert_seqs    = tf.placeholder(tf.float32, [batch_size, None, 3])
+        self.input_learner_seqs   = tf.placeholder(tf.float32, [batch_size, None, 3])
+        # coaching
+        self.coached_learner_seqs = self.__coaching(self.input_learner_seqs, self.input_expert_seqs, eps=eps)
+        self.learner_seqs_loglik  = self._log_likelihood(learner_seqs=self.coached_learner_seqs , keep_latest_k=keep_latest_k)
         # build policy optimizer
         self._policy_optimizer(
             expert_seqs=self.input_expert_seqs, 
-            learner_seqs=self.input_learner_seqs,
+            learner_seqs=self.coached_learner_seqs,
             learner_seqs_loglik=self.learner_seqs_loglik, 
             lr=lr)
     
@@ -100,6 +102,38 @@ class RL_Hawkes_Generator(object):
         emp_ll_mean = tf.reduce_sum(learner_learner_kernel, axis=0) * 2 # [batch_size * learner_seq_len]
         emp_el_mean = tf.reduce_sum(expert_learner_kernel, axis=0) * 2  # [batch_size * learner_seq_len]
         return tf.expand_dims(emp_ll_mean - emp_el_mean, -1)            # [batch_size * learner_seq_len, 1]
+
+    def __coaching(self, learner_seqs, expert_seqs, eps):
+        """
+        coach the learner by replacing part of generated learner sequences with the expert 
+        sequence for the (greedy) exploration.
+        """
+        # align learner and expert sequences
+        learner_seqs, expert_seqs, seq_len = self.__align_learner_expert_seqs(learner_seqs, expert_seqs)
+        # coaching and retain mask
+        p             = tf.random_uniform([self.batch_size, 1, 1], 0, 1)    # [batch_size, 1]
+        coaching_mask = tf.tile(tf.cast(p < eps, dtype=tf.float32), [1, seq_len, 3]) # [batch_size, 1]
+        retain_mask   = 1. - coaching_mask
+        # replace part of learner sequences by expert sequences
+        learner_seqs  = tf.multiply(learner_seqs, retain_mask) + tf.multiply(expert_seqs, coaching_mask)
+        return learner_seqs
+
+    @staticmethod
+    def __align_learner_expert_seqs(learner_seqs, expert_seqs):
+        """
+        align learner sequences and expert sequences, i.e., make two batch of sequences have the same 
+        sequence length by padding zeros to the tail.
+        """
+        batch_size       = tf.shape(learner_seqs)[0]
+        learner_seq_len  = tf.shape(learner_seqs)[1]
+        expert_seq_len   = tf.shape(expert_seqs)[1]
+        max_seq_len      = tf.cond(tf.less(learner_seq_len, expert_seq_len), 
+            lambda: expert_seq_len, lambda: learner_seq_len)
+        learner_paddings = tf.zeros([batch_size, max_seq_len - learner_seq_len, 3])
+        expert_paddings  = tf.zeros([batch_size, max_seq_len - expert_seq_len, 3])
+        learner_seqs     = tf.concat([learner_seqs, learner_paddings], axis=1)
+        expert_seqs      = tf.concat([expert_seqs, expert_paddings], axis=1)
+        return learner_seqs, expert_seqs, max_seq_len
     
     @staticmethod
     def __concatenate_batch(seqs):
