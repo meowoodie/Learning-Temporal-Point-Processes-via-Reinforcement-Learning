@@ -13,7 +13,7 @@ class RL_Hawkes_Generator(object):
     Reinforcement Learning Based Point Process Generator
     """
 
-    def __init__(self, T, S, batch_size, C=1., maximum=1e+3, keep_latest_k=None, lr=1e-5, eps=0.5):
+    def __init__(self, T, S, batch_size, C=1., maximum=1e+3, keep_latest_k=None, lr=1e-5, eps=0.2):
         """
         Params:
         - T: the maximum time of the sequences
@@ -31,12 +31,12 @@ class RL_Hawkes_Generator(object):
         self.input_expert_seqs    = tf.placeholder(tf.float32, [batch_size, None, 3])
         self.input_learner_seqs   = tf.placeholder(tf.float32, [batch_size, None, 3])
         # coaching
-        # self.coached_learner_seqs = self.__coaching(self.input_learner_seqs, self.input_expert_seqs, eps=eps)
-        self.learner_seqs_loglik  = self._log_likelihood(learner_seqs=self.input_learner_seqs , keep_latest_k=keep_latest_k)
+        self.coached_learner_seqs = self.__coaching(self.input_learner_seqs, self.input_expert_seqs, eps=eps)
+        self.learner_seqs_loglik  = self._log_likelihood(learner_seqs=self.coached_learner_seqs , keep_latest_k=keep_latest_k)
         # build policy optimizer
         self._policy_optimizer(
             expert_seqs=self.input_expert_seqs, 
-            learner_seqs=self.input_learner_seqs,
+            learner_seqs=self.coached_learner_seqs,
             learner_seqs_loglik=self.learner_seqs_loglik, 
             lr=lr)
     
