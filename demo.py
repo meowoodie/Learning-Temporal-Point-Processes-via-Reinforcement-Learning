@@ -24,15 +24,14 @@ if __name__ == "__main__":
 	# tf.set_random_seed(1)
 
 	expert_seqs = np.load('../Spatio-Temporal-Point-Process-Simulator/results/hpp_Feb_18.npy')
-	# expert_seqs = expert_seqs[:150, :, :]
 	print(expert_seqs.shape)
 
 	# training model
 	with tf.Session() as sess:
 		# model configuration
-		batch_size       = 5
+		batch_size       = 50
 		epoches          = 15
-		lr               = 1e-5
+		lr               = 1e-7
 		T                = [0., 10.]
 		S                = [[-1., 1.], [-1., 1.]]
 
