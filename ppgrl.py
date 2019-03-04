@@ -13,7 +13,7 @@ class RL_Hawkes_Generator(object):
     Reinforcement Learning Based Point Process Generator
     """
 
-    def __init__(self, T, S, batch_size, C=1., maximum=1e+3, keep_latest_k=None, lr=1e-5, eps=0.2):
+    def __init__(self, T, S, batch_size, C=1., maximum=1e+3, keep_latest_k=None, kb=0.5, lr=1e-5, eps=0.2):
         """
         Params:
         - T: the maximum time of the sequences
@@ -31,13 +31,14 @@ class RL_Hawkes_Generator(object):
         self.input_expert_seqs    = tf.placeholder(tf.float32, [batch_size, None, 3])
         self.input_learner_seqs   = tf.placeholder(tf.float32, [batch_size, None, 3])
         # coaching
-        self.coached_learner_seqs = self.__coaching(self.input_learner_seqs, self.input_expert_seqs, eps=eps)
-        self.learner_seqs_loglik  = self._log_likelihood(learner_seqs=self.coached_learner_seqs , keep_latest_k=keep_latest_k)
+        # self.coached_learner_seqs = self._coaching(self.input_learner_seqs, self.input_expert_seqs, eps=eps)
+        self.learner_seqs_loglik  = self._log_likelihood(learner_seqs=self.input_learner_seqs , keep_latest_k=keep_latest_k)
         # build policy optimizer
         self._policy_optimizer(
             expert_seqs=self.input_expert_seqs, 
-            learner_seqs=self.coached_learner_seqs,
+            learner_seqs=self.input_learner_seqs,
             learner_seqs_loglik=self.learner_seqs_loglik, 
+            kb=kb,
             lr=lr)
     
     def _log_likelihood(self, learner_seqs, keep_latest_k):
@@ -65,7 +66,7 @@ class RL_Hawkes_Generator(object):
         logliklis = tf.expand_dims(tf.stack(logliklis, axis=0), -1)
         return logliklis
 
-    def _policy_optimizer(self, expert_seqs, learner_seqs, learner_seqs_loglik, lr):
+    def _policy_optimizer(self, expert_seqs, learner_seqs, learner_seqs_loglik, kb, lr):
         """policy optimizer"""
         # concatenate batches in the sequences
         concat_expert_seq         = self.__concatenate_batch(expert_seqs)          # [batch_size * expert_seq_len, data_dim]
@@ -74,14 +75,14 @@ class RL_Hawkes_Generator(object):
 
         # calculate average rewards
         print("[%s] building reward." % arrow.now(), file=sys.stderr)
-        reward = self._reward(concat_expert_seq, concat_learner_seq) 
+        reward = self._reward(concat_expert_seq, concat_learner_seq, kb) 
 
         # cost and optimizer
         print("[%s] building optimizer." % arrow.now(), file=sys.stderr)
         self.cost      = tf.reduce_sum(tf.multiply(reward, concat_learner_seq_loglik), axis=0) / self.batch_size
         self.optimizer = tf.train.GradientDescentOptimizer(lr).minimize(self.cost)
 
-    def _reward(self, expert_seq, learner_seq, kernel_bandwidth=0.5): 
+    def _reward(self, expert_seq, learner_seq, kb): 
         """reward function"""
         # get mask for concatenated expert and learner sequences
         learner_mask_t = tf.expand_dims(tf.cast(learner_seq[:, 0] > 0, tf.float32), -1)
@@ -93,7 +94,7 @@ class RL_Hawkes_Generator(object):
 
         # calculate upper-half kernel matrix
         # - [learner_seq_len, learner_seq_len], [expert_seq_len, learner_seq_len]
-        learner_learner_kernel, expert_learner_kernel = self.__kernel_matrix(learner_seq, expert_seq, kernel_bandwidth)
+        learner_learner_kernel, expert_learner_kernel = self.__kernel_matrix(learner_seq, expert_seq, kb)
 
         learner_learner_kernel = tf.multiply(learner_learner_kernel, learner_learner_kernel_mask)
         expert_learner_kernel  = tf.multiply(expert_learner_kernel, expert_learner_kernel_mask)
@@ -103,7 +104,7 @@ class RL_Hawkes_Generator(object):
         emp_el_mean = tf.reduce_sum(expert_learner_kernel, axis=0) * 2  # [batch_size * learner_seq_len]
         return tf.expand_dims(emp_ll_mean - emp_el_mean, -1)            # [batch_size * learner_seq_len, 1]
 
-    def __coaching(self, learner_seqs, expert_seqs, eps):
+    def _coaching(self, learner_seqs, expert_seqs, eps):
         """
         coach the learner by replacing part of generated learner sequences with the expert 
         sequence for the (greedy) exploration.

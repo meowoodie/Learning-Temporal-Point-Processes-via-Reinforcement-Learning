@@ -29,11 +29,13 @@ if __name__ == "__main__":
 	# training model
 	with tf.Session() as sess:
 		# model configuration
-		batch_size       = 50
+		batch_size       = 15
 		epoches          = 15
-		lr               = 1e-7
+		lr               = 1e-5
 		T                = [0., 10.]
 		S                = [[-1., 1.], [-1., 1.]]
 
-		ppg = RL_Hawkes_Generator(T=T, S=S, batch_size=batch_size, C=1., maximum=1e+3, keep_latest_k=None, lr=lr)
+		ppg = RL_Hawkes_Generator(T=T, S=S, batch_size=batch_size, 
+			C=1., maximum=1e+3, keep_latest_k=None, 
+			kb=1, lr=lr, eps=0.2)
 		ppg.train(sess, epoches, expert_seqs, trainplot=False)
