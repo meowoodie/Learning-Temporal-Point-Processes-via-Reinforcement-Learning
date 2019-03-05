@@ -24,18 +24,19 @@ if __name__ == "__main__":
 	# tf.set_random_seed(1)
 
 	expert_seqs = np.load('../Spatio-Temporal-Point-Process-Simulator/results/hpp_Feb_18.npy')
+	expert_seqs = expert_seqs[:100, :, :]
 	print(expert_seqs.shape)
 
 	# training model
 	with tf.Session() as sess:
 		# model configuration
-		batch_size       = 15
+		batch_size       = 20
 		epoches          = 15
-		lr               = 1e-5
+		lr               = 5e-5
 		T                = [0., 10.]
 		S                = [[-1., 1.], [-1., 1.]]
 
 		ppg = RL_Hawkes_Generator(T=T, S=S, batch_size=batch_size, 
 			C=1., maximum=1e+3, keep_latest_k=None, 
-			kb=1, lr=lr, eps=0.2)
+			kb=.2, lr=lr, eps=0.2)
 		ppg.train(sess, epoches, expert_seqs, trainplot=False)

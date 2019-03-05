@@ -68,6 +68,9 @@ class RL_Hawkes_Generator(object):
 
     def _policy_optimizer(self, expert_seqs, learner_seqs, learner_seqs_loglik, kb, lr):
         """policy optimizer"""
+        # expert_seqs  = self.__seqs_diff(expert_seqs)
+        # learner_seqs = self.__seqs_diff(learner_seqs)
+
         # concatenate batches in the sequences
         concat_expert_seq         = self.__concatenate_batch(expert_seqs)          # [batch_size * expert_seq_len, data_dim]
         concat_learner_seq        = self.__concatenate_batch(learner_seqs)         # [batch_size * learner_seq_len, data_dim]
@@ -119,6 +122,19 @@ class RL_Hawkes_Generator(object):
         learner_seqs  = tf.multiply(learner_seqs, retain_mask) + tf.multiply(expert_seqs, coaching_mask)
         return learner_seqs
 
+    @staticmethod
+    def __seqs_diff(seqs):
+        """
+        replace the elements of the sequences with the differences of values between the current moment and
+        the last moment.
+        """
+        batch_size = tf.shape(seqs)[0]
+        mask_t     = tf.cast(seqs[:, :, 0] > 0, tf.float32)
+        mask       = tf.tile(tf.expand_dims(mask_t, -1), [1, 1, 3])
+        seqs_diff  = seqs[:, 1:, :] - seqs[:, :-1, :]
+        seqs_diff  = tf.concat([tf.zeros([batch_size, 1, 3]), seqs_diff], axis=1)
+        return seqs_diff
+        
     @staticmethod
     def __align_learner_expert_seqs(learner_seqs, expert_seqs):
         """
@@ -180,7 +196,7 @@ class RL_Hawkes_Generator(object):
         n_batches = int(n_data / self.batch_size)
         
         if trainplot:
-            ppim = utils.PointProcessIntensityMeter(self.T[1], self.batch_size)
+            ppim = utils.PointProcessDistributionMeter(self.T, self.S, self.batch_size)
 
         # training over epoches
         for epoch in range(epoches):
@@ -209,11 +225,10 @@ class RL_Hawkes_Generator(object):
                 # record cost for each batch
                 avg_train_cost.append(train_cost)
 
-            if trainplot:
-                # update intensity plot
-                learner_seqs, _ = self.hawkes.get_learner_seqs(sess, self.batch_size, keep_latest_k=None)
-                ppim.update_time_intensity(batch_train_expert[:, : , 0], learner_seqs[:, :, 0])
-                ppim.update_location_intensity(batch_train_expert[:, : , 1:], learner_seqs[:, :, 1:])
+                if trainplot:
+                    # update distribution plot
+                    ppim.update_time_distribution(batch_train_learner[:, : , 0], batch_train_expert[:, :, 0])
+                    ppim.update_location_distribution(batch_train_learner[:, : , 1:], batch_train_expert[:, :, 1:])
 
             # training log output
             avg_train_cost = np.mean(avg_train_cost)

@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import numpy as np
+import seaborn as sns
 import tensorflow as tf
 import matplotlib.pyplot as plt
 
@@ -27,11 +28,12 @@ def l2_norm(x, y):
     dist_mat = x_sqr + tf.transpose(y_sqr) - 2 * xy
     return dist_mat
 
-class PointProcessIntensityMeter(object):
-
-    def __init__(self, T, batch_size):
+class Meter(object):
+    """
+    Base class for the point process visualizer
+    """
+    def __init__(self, batch_size):
         self.batch_size = batch_size
-        self.T          = T
         # figure and axes for time intensity plot
         self.fig_t      = plt.figure()
         self.ax_t       = self.fig_t.add_subplot(111)
@@ -40,6 +42,54 @@ class PointProcessIntensityMeter(object):
         self.ax_l1      = self.fig_l.add_subplot(1,2,1)
         self.ax_l2      = self.fig_l.add_subplot(1,2,2)
         plt.ion()
+    
+class PointProcessDistributionMeter(Meter):
+    """
+    Data distribution visualizer for point process
+    """
+    def __init__(self, T, S, batch_size):
+        self.T = T
+        self.S = S
+        Meter.__init__(self, batch_size)
+
+    def update_time_distribution(self, seq_t_learner, seq_t_expert):
+        self.update_distribution(seq_t_learner, seq_t_expert, 
+            self.ax_t, self.T, 
+            xlabel="Time", ylabel="Distribution")
+
+    def update_location_distribution(self, seq_l_learner, seq_l_expert):
+        self.update_distribution(seq_l_learner[:, :, 0], seq_l_expert[:, :, 0], 
+            self.ax_l1, self.S[0], 
+            xlabel="X", ylabel="Distribution")
+        self.update_distribution(seq_l_learner[:, :, 1], seq_l_expert[:, :, 1], 
+            self.ax_l2, self.S[1], 
+            xlabel="Y", ylabel="Distribution")
+
+    @staticmethod
+    def update_distribution(seq_learner, seq_expert, axes, xlim, xlabel, ylabel):
+        # clear last figure
+        axes.clear()
+        seq_learner = seq_learner.flatten()
+        seq_learner = seq_learner[seq_learner != 0]
+        seq_expert  = seq_expert.flatten()
+        seq_expert  = seq_expert[seq_expert != 0]
+        sns.set(color_codes=True)
+        sns.distplot(seq_learner, ax=axes, hist=False, rug=True, label="Learner")
+        sns.distplot(seq_expert, ax=axes, hist=False, rug=True, label="Expert")
+        axes.set_xlim(xlim)
+        axes.set(xlabel=xlabel, ylabel=ylabel)
+        axes.legend(frameon=False)
+        plt.pause(0.02)
+        
+        
+
+class PointProcessIntensityMeter(Meter):
+    """
+    Conditional intensity visualizer for point process
+    """
+    def __init__(self, T, batch_size):
+        self.T = T
+        Meter.__init__(self, batch_size)
 
     def update_time_intensity(self, seq_t_1, seq_t_2, tlim=10):
         # clear last figure
@@ -56,6 +106,7 @@ class PointProcessIntensityMeter(object):
         self.ax_t.plot(np.arange(0, self.T, 0.5), seq_1_intensity)
         # sequence 2
         seq_flat_2 = seq_t_2.flatten()
+        seq_flat_2 = seq_flat_2[seq_flat_2 != 0]
         seq_2_intensity_cum = []
         for grid in np.arange(0, self.T, 0.5):
             idx = (seq_flat_2 < grid)
