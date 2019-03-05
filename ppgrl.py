@@ -13,7 +13,7 @@ class RL_Hawkes_Generator(object):
     Reinforcement Learning Based Point Process Generator
     """
 
-    def __init__(self, T, S, batch_size, C=1., maximum=1e+3, keep_latest_k=None, kb=0.5, lr=1e-5, eps=0.2):
+    def __init__(self, T, S, batch_size, C=1., maximum=1e+3, keep_latest_k=None, lr=1e-5, eps=0.2):
         """
         Params:
         - T: the maximum time of the sequences
@@ -38,7 +38,6 @@ class RL_Hawkes_Generator(object):
             expert_seqs=self.input_expert_seqs, 
             learner_seqs=self.input_learner_seqs,
             learner_seqs_loglik=self.learner_seqs_loglik, 
-            kb=kb,
             lr=lr)
     
     def _log_likelihood(self, learner_seqs, keep_latest_k):
@@ -66,7 +65,7 @@ class RL_Hawkes_Generator(object):
         logliklis = tf.expand_dims(tf.stack(logliklis, axis=0), -1)
         return logliklis
 
-    def _policy_optimizer(self, expert_seqs, learner_seqs, learner_seqs_loglik, kb, lr):
+    def _policy_optimizer(self, expert_seqs, learner_seqs, learner_seqs_loglik, lr):
         """policy optimizer"""
         # expert_seqs  = self.__seqs_diff(expert_seqs)
         # learner_seqs = self.__seqs_diff(learner_seqs)
@@ -78,14 +77,17 @@ class RL_Hawkes_Generator(object):
 
         # calculate average rewards
         print("[%s] building reward." % arrow.now(), file=sys.stderr)
-        reward = self._reward(concat_expert_seq, concat_learner_seq, kb) 
+        reward = self._reward(concat_expert_seq, concat_learner_seq) 
 
         # cost and optimizer
         print("[%s] building optimizer." % arrow.now(), file=sys.stderr)
         self.cost      = tf.reduce_sum(tf.multiply(reward, concat_learner_seq_loglik), axis=0) / self.batch_size
-        self.optimizer = tf.train.GradientDescentOptimizer(lr).minimize(self.cost)
+        # self.optimizer = tf.train.GradientDescentOptimizer(lr).minimize(self.cost)
+        global_step    = tf.Variable(0, trainable=False)
+        learning_rate  = tf.train.exponential_decay(lr, global_step, decay_steps=100, decay_rate=0.99, staircase=True)
+        self.optimizer = tf.train.AdamOptimizer(learning_rate, beta1=0.6, beta2=0.9).minimize(self.cost, global_step=global_step)
 
-    def _reward(self, expert_seq, learner_seq, kb): 
+    def _reward(self, expert_seq, learner_seq, kb=0.2): 
         """reward function"""
         # get mask for concatenated expert and learner sequences
         learner_mask_t = tf.expand_dims(tf.cast(learner_seq[:, 0] > 0, tf.float32), -1)
