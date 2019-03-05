@@ -30,9 +30,9 @@ if __name__ == "__main__":
 	# training model
 	with tf.Session() as sess:
 		# model configuration
-		batch_size       = 40
+		batch_size       = 20
 		epoches          = 15
-		lr               = 1e-4
+		lr               = 1e-3
 		T                = [0., 10.]
 		S                = [[-1., 1.], [-1., 1.]]
 
