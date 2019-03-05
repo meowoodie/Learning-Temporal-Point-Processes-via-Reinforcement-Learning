@@ -30,6 +30,7 @@ class RL_Hawkes_Generator(object):
         # input tensors: expert sequences (time, location)
         self.input_expert_seqs    = tf.placeholder(tf.float32, [batch_size, None, 3])
         self.input_learner_seqs   = tf.placeholder(tf.float32, [batch_size, None, 3])
+        # TODO: make esp decay exponentially
         # coaching
         self.coached_learner_seqs = self._coaching(self.input_learner_seqs, self.input_expert_seqs, eps=eps)
         self.learner_seqs_loglik  = self._log_likelihood(learner_seqs=self.coached_learner_seqs, keep_latest_k=keep_latest_k)
@@ -78,6 +79,7 @@ class RL_Hawkes_Generator(object):
         # calculate average rewards
         print("[%s] building reward." % arrow.now(), file=sys.stderr)
         reward = self._reward(concat_expert_seq, concat_learner_seq) 
+        # TODO: record the discrepency
 
         # cost and optimizer
         print("[%s] building optimizer." % arrow.now(), file=sys.stderr)
