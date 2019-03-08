@@ -83,8 +83,7 @@ class RL_Hawkes_Generator(object):
 
         # cost and optimizer
         print("[%s] building optimizer." % arrow.now(), file=sys.stderr)
-        # self.cost      = tf.reduce_sum(tf.multiply(reward, concat_learner_seq_loglik), axis=0) / self.batch_size
-        self.cost      = reward * tf.reduce_sum(concat_learner_seq_loglik, axis=0) / self.batch_size
+        self.cost      = tf.reduce_sum(tf.multiply(reward, concat_learner_seq_loglik), axis=0) / self.batch_size
         # self.optimizer = tf.train.GradientDescentOptimizer(lr).minimize(self.cost)
         global_step    = tf.Variable(0, trainable=False)
         learning_rate  = tf.train.exponential_decay(lr, global_step, decay_steps=100, decay_rate=0.99, staircase=True)
@@ -110,8 +109,7 @@ class RL_Hawkes_Generator(object):
         # calculate reward for each of data point in learner sequence
         emp_ll_mean = tf.reduce_sum(learner_learner_kernel, axis=0) / self.batch_size # [batch_size * learner_seq_len]
         emp_el_mean = tf.reduce_sum(expert_learner_kernel, axis=0) / self.batch_size  # [batch_size * learner_seq_len]
-        return tf.reduce_sum(emp_ll_mean - emp_el_mean)
-        # return tf.expand_dims(emp_ll_mean - emp_el_mean, -1)                          # [batch_size * learner_seq_len, 1]
+        return tf.expand_dims(emp_ll_mean - emp_el_mean, -1)                          # [batch_size * learner_seq_len, 1]
 
     def _coaching(self, learner_seqs, expert_seqs, eps):
         """
