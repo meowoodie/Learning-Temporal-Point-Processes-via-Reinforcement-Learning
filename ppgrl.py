@@ -32,12 +32,12 @@ class RL_Hawkes_Generator(object):
         self.input_learner_seqs   = tf.placeholder(tf.float32, [batch_size, None, 3])
         # TODO: make esp decay exponentially
         # coaching
-        self.coached_learner_seqs = self._coaching(self.input_learner_seqs, self.input_expert_seqs, eps=eps)
-        self.learner_seqs_loglik  = self._log_likelihood(learner_seqs=self.coached_learner_seqs, keep_latest_k=keep_latest_k)
+        # self.coached_learner_seqs = self._coaching(self.input_learner_seqs, self.input_expert_seqs, eps=eps)
+        self.learner_seqs_loglik  = self._log_likelihood(learner_seqs=self.input_learner_seqs, keep_latest_k=keep_latest_k)
         # build policy optimizer
         self._policy_optimizer(
             expert_seqs=self.input_expert_seqs, 
-            learner_seqs=self.coached_learner_seqs,
+            learner_seqs=self.input_learner_seqs,
             learner_seqs_loglik=self.learner_seqs_loglik, 
             lr=lr)
     
@@ -83,13 +83,21 @@ class RL_Hawkes_Generator(object):
 
         # cost and optimizer
         print("[%s] building optimizer." % arrow.now(), file=sys.stderr)
-        self.cost      = tf.reduce_sum(tf.multiply(reward, concat_learner_seq_loglik), axis=0) / self.batch_size
+
+        self.debug1    = reward
+        self.debug2    = concat_learner_seq_loglik
+        self.debug3    = concat_learner_seq
+
+        # self.cost      = tf.reduce_sum(tf.multiply(reward, concat_learner_seq_loglik), axis=0) / self.batch_size
+        self.cost      = tf.reduce_sum( \
+                         tf.reduce_sum(tf.reshape(reward, [self.batch_size, tf.shape(learner_seqs)[1]]), axis=1) * \
+                         tf.reduce_sum(tf.reshape(concat_learner_seq_loglik, [self.batch_size, tf.shape(learner_seqs)[1]]), axis=1))
         # self.optimizer = tf.train.GradientDescentOptimizer(lr).minimize(self.cost)
         global_step    = tf.Variable(0, trainable=False)
         learning_rate  = tf.train.exponential_decay(lr, global_step, decay_steps=100, decay_rate=0.99, staircase=True)
         self.optimizer = tf.train.AdamOptimizer(learning_rate, beta1=0.6, beta2=0.9).minimize(self.cost, global_step=global_step)
 
-    def _reward(self, expert_seq, learner_seq, kb=0.2): 
+    def _reward(self, expert_seq, learner_seq, kb=5): 
         """reward function"""
         # get mask for concatenated expert and learner sequences
         learner_mask_t = tf.expand_dims(tf.cast(learner_seq[:, 0] > 0, tf.float32), -1)
@@ -217,6 +225,15 @@ class RL_Hawkes_Generator(object):
                 # training and testing batch data
                 batch_train_expert  = expert_seqs[batch_train_ids, :, :]
                 batch_train_learner = self.hawkes.sampling(sess, self.batch_size)
+                
+                # # debug
+                # res1, res2, res3 = sess.run([self.debug1, self.debug2, self.debug3], feed_dict={
+                #     self.input_expert_seqs:  batch_train_expert, 
+                #     self.input_learner_seqs: batch_train_learner})
+                # print(res1)
+                # print(res2)
+                # print(res3)
+
                 # optimization procedure
                 sess.run(self.optimizer, feed_dict={
                     self.input_expert_seqs:  batch_train_expert, 
@@ -489,3 +506,17 @@ class RL_LSTM_Generator(object):
             print('[%s] Epoch %d (n_train_batches=%d, batch_size=%d)' % (arrow.now(), epoch, n_batches, batch_size), file=sys.stderr)
             print('[%s] Training cost:\t%f' % (arrow.now(), avg_train_cost), file=sys.stderr)
             print('[%s] Testing cost:\t%f' % (arrow.now(), avg_test_cost), file=sys.stderr)
+
+if __name__ == "__main__":
+    # generate expert sequences
+	# np.random.seed(0)
+	# tf.set_random_seed(1)
+
+    expert_seqs = np.load('../Spatio-Temporal-Point-Process-Simulator/results/hpp_Feb_18.npy')
+    print(expert_seqs.shape)
+
+    # training model
+    with tf.Session() as sess:
+        a = tf.constant([[1],[2],[3],[4],[5],[6],[7],[8]])
+        print(sess.run(tf.reshape(a, [2, 4])))
+        
