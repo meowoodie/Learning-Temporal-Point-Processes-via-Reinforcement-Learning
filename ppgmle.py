@@ -11,7 +11,7 @@ class MLE_Hawkes_Generator(object):
     Reinforcement Learning Based Point Process Generator
     """
 
-    def __init__(self, T, S, batch_size, C=1., data_dim=3, keep_latest_k=None, lr=1e-3):
+    def __init__(self, T, S, layers, batch_size, C=1., data_dim=3, keep_latest_k=None, lr=1e-3):
         """
         Params:
         - T: the maximum time of the sequences
@@ -25,11 +25,14 @@ class MLE_Hawkes_Generator(object):
         """
         self.batch_size = batch_size
         # Hawkes process
-        self.hawkes     = SpatialTemporalHawkes(T, S, C=C, verbose=False)
+        self.hawkes     = SpatialTemporalHawkes(T, S, layers=layers, C=C, verbose=False)
         # input tensors: expert sequences (time, location, marks)
         self.input_seqs = tf.placeholder(tf.float32, [batch_size, None, data_dim]) # [batch_size, seq_len, data_dim]
         self.cost       = -1 * self.log_likelihood(S, keep_latest_k=keep_latest_k) / batch_size
-        self.optimizer  = tf.train.GradientDescentOptimizer(lr).minimize(self.cost)
+        # self.optimizer  = tf.train.GradientDescentOptimizer(lr).minimize(self.cost)
+        global_step    = tf.Variable(0, trainable=False)
+        learning_rate  = tf.train.exponential_decay(lr, global_step, decay_steps=100, decay_rate=0.99, staircase=True)
+        self.optimizer = tf.train.AdamOptimizer(learning_rate, beta1=0.6, beta2=0.9).minimize(self.cost, global_step=global_step)
 
     def log_likelihood(self, S, keep_latest_k):
         """
@@ -57,10 +60,10 @@ class MLE_Hawkes_Generator(object):
 
         # initialization
         if not pretrained:
-            print("[%s] parameters are initialized." % arrow.now(), file=sys.stderr)
             # initialize network parameters
             init_op = tf.global_variables_initializer()
             sess.run(init_op)
+            print("[%s] parameters are initialized." % arrow.now(), file=sys.stderr)
 
         # data configurations
         # - number of expert sequences
@@ -82,11 +85,13 @@ class MLE_Hawkes_Generator(object):
                 batch_train_ids  = shuffled_ids[idx]
                 # training and testing batch data
                 batch_train_seqs = expert_seqs[batch_train_ids, :, :]
+                # print(sess.run(self.debug1, feed_dict={self.input_seqs: batch_train_seqs}))
+                # print(sess.run(self.cost, feed_dict={self.input_seqs: batch_train_seqs}))
                 # optimization procedure
                 sess.run(self.optimizer, feed_dict={self.input_seqs: batch_train_seqs})
                 # cost for train batch and test batch
                 train_cost = sess.run(self.cost, feed_dict={self.input_seqs: batch_train_seqs})
-                # print("[%s] batch training cost: %.2f." % (arrow.now(), train_cost), file=sys.stderr)
+                print("[%s] batch training cost: %.2f." % (arrow.now(), train_cost), file=sys.stderr)
                 # record cost for each batch
                 avg_train_cost.append(train_cost)
 
@@ -95,20 +100,34 @@ class MLE_Hawkes_Generator(object):
             print('[%s] Epoch %d (n_train_batches=%d, batch_size=%d)' % (arrow.now(), epoch, n_batches, batch_size), file=sys.stderr)
             print('[%s] Training cost:\t%f' % (arrow.now(), avg_train_cost), file=sys.stderr)
 
-        print(sess.run([self.hawkes.mu, self.hawkes.beta, self.hawkes.sigma_x, self.hawkes.sigma_y]))
+        # print(sess.run([self.hawkes.mu, self.hawkes.beta, self.hawkes.sigma_x, self.hawkes.sigma_y]))
 
 if __name__ == "__main__":
     # Unittest example
-    seqs = np.load('../Spatio-Temporal-Point-Process-Simulator/results/hpp_Feb_18.npy')
+    seqs = np.load('../Spatio-Temporal-Point-Process-Simulator/results/free_hpp_Mar_10.npy')
+    seqs = seqs[:200, :, :]
     print(seqs.shape)
 
     # training model
     with tf.Session() as sess:
-        batch_size       = 50
-        epoches          = 15
+        S          = [[-1., 1.], [-1., 1.]]
+        T          = [0., 10.]
+        batch_size = 20
+        epoches    = 10
+        layers     = [20, 20]
 
         ppg = MLE_Hawkes_Generator(
-            T=[0., 10.], S=[[-1., 1.], [-1., 1.]], 
+            T=T, S=S, layers=layers, 
             batch_size=batch_size, data_dim=3, 
-            keep_latest_k=None, lr=1e-4)
+            keep_latest_k=None, lr=1e-2)
         ppg.train(sess, epoches, seqs)
+
+        # plot parameters map
+        from stppg import FreeDiffusionKernel
+        SIGMA_SHIFT = .1
+        SIGMA_SCALE = .25
+        beta, Ws, bs = sess.run([ppg.hawkes.beta, ppg.hawkes.Ws, ppg.hawkes.bs])
+        kernel = FreeDiffusionKernel(
+            layers=layers, beta=beta, C=1., Ws=Ws, bs=bs,
+            SIGMA_SHIFT=SIGMA_SHIFT, SIGMA_SCALE=SIGMA_SCALE)
+        utils.plot_spatial_kernel("results/kernel_mle.pdf", kernel, S=S, grid_size=50)
