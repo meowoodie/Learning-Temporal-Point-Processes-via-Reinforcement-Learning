@@ -45,7 +45,7 @@ class SpatialTemporalHawkes(object):
     #     self.sigma_y = tf.get_variable(name="sigma_y", initializer=tf.constant(INIT_PARAM), dtype=tf.float32)
     #     self.verbose = verbose
 
-    def __init__(self, T, S, layers=[20, 20], Ws=None, bs=None, C=1., maximum=1e+4, verbose=False):
+    def __init__(self, T, S, layers=[20, 20], Ws=None, bs=None, C=1., maximum=1e+3, verbose=False):
         """
         """
         # constant hyper parameters

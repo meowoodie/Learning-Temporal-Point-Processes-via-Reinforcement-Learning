@@ -13,7 +13,7 @@ class RL_Hawkes_Generator(object):
     Reinforcement Learning Based Point Process Generator
     """
 
-    def __init__(self, T, S, batch_size, C=1., maximum=1e+3, keep_latest_k=None, lr=1e-5, eps=0.2):
+    def __init__(self, T, S, layers, batch_size, C=1., maximum=1e+3, keep_latest_k=None, lr=1e-5, eps=0.2):
         """
         Params:
         - T: the maximum time of the sequences
@@ -26,7 +26,7 @@ class RL_Hawkes_Generator(object):
         self.batch_size = batch_size # batch size
         self.maximum    = maximum    # upper bound of the conditional intensity
         # Hawkes process generator
-        self.hawkes     = SpatialTemporalHawkes(T, S, C=C, maximum=maximum, verbose=False)
+        self.hawkes     = SpatialTemporalHawkes(T, S, layers=layers, C=C, maximum=1e+3, verbose=False)
         # input tensors: expert sequences (time, location)
         self.input_expert_seqs    = tf.placeholder(tf.float32, [batch_size, None, 3])
         self.input_learner_seqs   = tf.placeholder(tf.float32, [batch_size, None, 3])
@@ -68,9 +68,6 @@ class RL_Hawkes_Generator(object):
 
     def _policy_optimizer(self, expert_seqs, learner_seqs, learner_seqs_loglik, lr):
         """policy optimizer"""
-        # expert_seqs  = self.__seqs_diff(expert_seqs)
-        # learner_seqs = self.__seqs_diff(learner_seqs)
-
         # concatenate batches in the sequences
         concat_expert_seq         = self.__concatenate_batch(expert_seqs)          # [batch_size * expert_seq_len, data_dim]
         concat_learner_seq        = self.__concatenate_batch(learner_seqs)         # [batch_size * learner_seq_len, data_dim]
@@ -84,14 +81,10 @@ class RL_Hawkes_Generator(object):
         # cost and optimizer
         print("[%s] building optimizer." % arrow.now(), file=sys.stderr)
 
-        self.debug1    = reward
-        self.debug2    = concat_learner_seq_loglik
-        self.debug3    = concat_learner_seq
-
         # self.cost      = tf.reduce_sum(tf.multiply(reward, concat_learner_seq_loglik), axis=0) / self.batch_size
         self.cost      = tf.reduce_sum( \
                          tf.reduce_sum(tf.reshape(reward, [self.batch_size, tf.shape(learner_seqs)[1]]), axis=1) * \
-                         tf.reduce_sum(tf.reshape(concat_learner_seq_loglik, [self.batch_size, tf.shape(learner_seqs)[1]]), axis=1))
+                         tf.reduce_sum(tf.reshape(concat_learner_seq_loglik, [self.batch_size, tf.shape(learner_seqs)[1]]), axis=1))  / self.batch_size
         # self.optimizer = tf.train.GradientDescentOptimizer(lr).minimize(self.cost)
         global_step    = tf.Variable(0, trainable=False)
         learning_rate  = tf.train.exponential_decay(lr, global_step, decay_steps=100, decay_rate=0.99, staircase=True)
@@ -133,19 +126,6 @@ class RL_Hawkes_Generator(object):
         # replace part of learner sequences by expert sequences
         learner_seqs  = tf.multiply(learner_seqs, retain_mask) + tf.multiply(expert_seqs, coaching_mask)
         return learner_seqs
-
-    @staticmethod
-    def __seqs_diff(seqs):
-        """
-        replace the elements of the sequences with the differences of values between the current moment and
-        the last moment.
-        """
-        batch_size = tf.shape(seqs)[0]
-        mask_t     = tf.cast(seqs[:, :, 0] > 0, tf.float32)
-        mask       = tf.tile(tf.expand_dims(mask_t, -1), [1, 1, 3])
-        seqs_diff  = seqs[:, 1:, :] - seqs[:, :-1, :]
-        seqs_diff  = tf.concat([tf.zeros([batch_size, 1, 3]), seqs_diff], axis=1)
-        return seqs_diff
         
     @staticmethod
     def __align_learner_expert_seqs(learner_seqs, expert_seqs):
@@ -225,15 +205,6 @@ class RL_Hawkes_Generator(object):
                 # training and testing batch data
                 batch_train_expert  = expert_seqs[batch_train_ids, :, :]
                 batch_train_learner = self.hawkes.sampling(sess, self.batch_size)
-                
-                # # debug
-                # res1, res2, res3 = sess.run([self.debug1, self.debug2, self.debug3], feed_dict={
-                #     self.input_expert_seqs:  batch_train_expert, 
-                #     self.input_learner_seqs: batch_train_learner})
-                # print(res1)
-                # print(res2)
-                # print(res3)
-
                 # optimization procedure
                 sess.run(self.optimizer, feed_dict={
                     self.input_expert_seqs:  batch_train_expert, 
@@ -506,17 +477,4 @@ class RL_LSTM_Generator(object):
             print('[%s] Epoch %d (n_train_batches=%d, batch_size=%d)' % (arrow.now(), epoch, n_batches, batch_size), file=sys.stderr)
             print('[%s] Training cost:\t%f' % (arrow.now(), avg_train_cost), file=sys.stderr)
             print('[%s] Testing cost:\t%f' % (arrow.now(), avg_test_cost), file=sys.stderr)
-
-if __name__ == "__main__":
-    # generate expert sequences
-	# np.random.seed(0)
-	# tf.set_random_seed(1)
-
-    expert_seqs = np.load('../Spatio-Temporal-Point-Process-Simulator/results/hpp_Feb_18.npy')
-    print(expert_seqs.shape)
-
-    # training model
-    with tf.Session() as sess:
-        a = tf.constant([[1],[2],[3],[4],[5],[6],[7],[8]])
-        print(sess.run(tf.reshape(a, [2, 4])))
         

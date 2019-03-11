@@ -25,7 +25,7 @@ class MLE_Hawkes_Generator(object):
         """
         self.batch_size = batch_size
         # Hawkes process
-        self.hawkes     = SpatialTemporalHawkes(T, S, layers=layers, C=C, verbose=False)
+        self.hawkes     = SpatialTemporalHawkes(T, S, layers=layers, C=C, maximum=1e+3, verbose=False)
         # input tensors: expert sequences (time, location, marks)
         self.input_seqs = tf.placeholder(tf.float32, [batch_size, None, data_dim]) # [batch_size, seq_len, data_dim]
         self.cost       = -1 * self.log_likelihood(S, keep_latest_k=keep_latest_k) / batch_size
@@ -119,7 +119,7 @@ if __name__ == "__main__":
         ppg = MLE_Hawkes_Generator(
             T=T, S=S, layers=layers, 
             batch_size=batch_size, data_dim=3, 
-            keep_latest_k=None, lr=1e-2)
+            keep_latest_k=None, lr=1e-3)
         ppg.train(sess, epoches, seqs)
 
         # plot parameters map
