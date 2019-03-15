@@ -11,7 +11,7 @@ class MLE_Hawkes_Generator(object):
     Reinforcement Learning Based Point Process Generator
     """
 
-    def __init__(self, T, S, layers, batch_size, C=1., data_dim=3, keep_latest_k=None, lr=1e-3):
+    def __init__(self, T, S, layers, batch_size, C=1., data_dim=3, keep_latest_k=None, lr=1e-3, reg_scale=0.):
         """
         Params:
         - T: the maximum time of the sequences
@@ -26,10 +26,13 @@ class MLE_Hawkes_Generator(object):
         self.batch_size = batch_size
         # Hawkes process
         self.hawkes     = SpatialTemporalHawkes(T, S, layers=layers, C=C, maximum=1e+3, verbose=False)
+        # regularization
+        l1_regularizer  = tf.contrib.layers.l1_regularizer(scale=reg_scale, scope=None)
+        penalty_term    = tf.contrib.layers.apply_regularization(l1_regularizer, self.hawkes.Ws)
         # input tensors: expert sequences (time, location, marks)
         self.input_seqs = tf.placeholder(tf.float32, [batch_size, None, data_dim]) # [batch_size, seq_len, data_dim]
-        self.cost       = -1 * self.log_likelihood(S, keep_latest_k=keep_latest_k) / batch_size
-        # self.optimizer  = tf.train.GradientDescentOptimizer(lr).minimize(self.cost)
+        self.cost       = -1 * self.log_likelihood(S, keep_latest_k=keep_latest_k) / batch_size + penalty_term
+        # Adam optimizer
         global_step    = tf.Variable(0, trainable=False)
         learning_rate  = tf.train.exponential_decay(lr, global_step, decay_steps=100, decay_rate=0.99, staircase=True)
         self.optimizer = tf.train.AdamOptimizer(learning_rate, beta1=0.6, beta2=0.9).minimize(self.cost, global_step=global_step)
@@ -64,6 +67,10 @@ class MLE_Hawkes_Generator(object):
             init_op = tf.global_variables_initializer()
             sess.run(init_op)
             print("[%s] parameters are initialized." % arrow.now(), file=sys.stderr)
+
+        beta, Ws, bs = sess.run([self.hawkes.beta, self.hawkes.Ws, self.hawkes.bs])
+        print(Ws)
+        print(bs)
 
         # data configurations
         # - number of expert sequences
@@ -105,7 +112,8 @@ class MLE_Hawkes_Generator(object):
 if __name__ == "__main__":
     # Unittest example
     seqs = np.load('../Spatio-Temporal-Point-Process-Simulator/results/free_hpp_Mar_10.npy')
-    seqs = seqs[:200, :, :]
+    print(seqs[:10, :, :])
+    seqs = np.concatenate([seqs[:200, :, :], seqs[300:, :, :]], axis=0)
     print(seqs.shape)
 
     # training model
@@ -114,12 +122,13 @@ if __name__ == "__main__":
         T          = [0., 10.]
         batch_size = 20
         epoches    = 10
-        layers     = [20, 20]
+        layers     = [5]
 
         ppg = MLE_Hawkes_Generator(
             T=T, S=S, layers=layers, 
             batch_size=batch_size, data_dim=3, 
-            keep_latest_k=None, lr=1e-3)
+            keep_latest_k=None, lr=1e-2, reg_scale=0.)
+        
         ppg.train(sess, epoches, seqs)
 
         # plot parameters map
@@ -131,3 +140,5 @@ if __name__ == "__main__":
             layers=layers, beta=beta, C=1., Ws=Ws, bs=bs,
             SIGMA_SHIFT=SIGMA_SHIFT, SIGMA_SCALE=SIGMA_SCALE)
         utils.plot_spatial_kernel("results/kernel_mle.pdf", kernel, S=S, grid_size=50)
+        print(Ws)
+        print(bs)
