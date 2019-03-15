@@ -32,12 +32,12 @@ class RL_Hawkes_Generator(object):
         self.input_learner_seqs   = tf.placeholder(tf.float32, [batch_size, None, 3])
         # TODO: make esp decay exponentially
         # coaching
-        # self.coached_learner_seqs = self._coaching(self.input_learner_seqs, self.input_expert_seqs, eps=eps)
-        self.learner_seqs_loglik  = self._log_likelihood(learner_seqs=self.input_learner_seqs, keep_latest_k=keep_latest_k)
+        self.coached_learner_seqs = self._coaching(self.input_learner_seqs, self.input_expert_seqs, eps=eps)
+        self.learner_seqs_loglik  = self._log_likelihood(learner_seqs=self.coached_learner_seqs, keep_latest_k=keep_latest_k)
         # build policy optimizer
         self._policy_optimizer(
             expert_seqs=self.input_expert_seqs, 
-            learner_seqs=self.input_learner_seqs,
+            learner_seqs=self.coached_learner_seqs,
             learner_seqs_loglik=self.learner_seqs_loglik, 
             lr=lr)
     
@@ -80,12 +80,11 @@ class RL_Hawkes_Generator(object):
 
         # cost and optimizer
         print("[%s] building optimizer." % arrow.now(), file=sys.stderr)
-
-        # self.cost      = tf.reduce_sum(tf.multiply(reward, concat_learner_seq_loglik), axis=0) / self.batch_size
-        self.cost      = tf.reduce_sum( \
-                         tf.reduce_sum(tf.reshape(reward, [self.batch_size, tf.shape(learner_seqs)[1]]), axis=1) * \
-                         tf.reduce_sum(tf.reshape(concat_learner_seq_loglik, [self.batch_size, tf.shape(learner_seqs)[1]]), axis=1))  / self.batch_size
-        # self.optimizer = tf.train.GradientDescentOptimizer(lr).minimize(self.cost)
+        self.cost      = tf.reduce_sum(tf.multiply(reward, concat_learner_seq_loglik), axis=0) / self.batch_size
+        # self.cost      = tf.reduce_sum( \
+        #                  tf.reduce_sum(tf.reshape(reward, [self.batch_size, tf.shape(learner_seqs)[1]]), axis=1) * \
+        #                  tf.reduce_sum(tf.reshape(concat_learner_seq_loglik, [self.batch_size, tf.shape(learner_seqs)[1]]), axis=1))  / self.batch_size
+        # Adam optimizer
         global_step    = tf.Variable(0, trainable=False)
         learning_rate  = tf.train.exponential_decay(lr, global_step, decay_steps=100, decay_rate=0.99, staircase=True)
         self.optimizer = tf.train.AdamOptimizer(learning_rate, beta1=0.6, beta2=0.9).minimize(self.cost, global_step=global_step)
@@ -477,4 +476,36 @@ class RL_LSTM_Generator(object):
             print('[%s] Epoch %d (n_train_batches=%d, batch_size=%d)' % (arrow.now(), epoch, n_batches, batch_size), file=sys.stderr)
             print('[%s] Training cost:\t%f' % (arrow.now(), avg_train_cost), file=sys.stderr)
             print('[%s] Testing cost:\t%f' % (arrow.now(), avg_test_cost), file=sys.stderr)
-        
+
+if __name__ == "__main__":
+	# generate expert sequences
+	# np.random.seed(0)
+	# tf.set_random_seed(1)
+
+	expert_seqs = np.load('../Spatio-Temporal-Point-Process-Simulator/results/free_hpp_Mar_10.npy')
+	expert_seqs = expert_seqs[:200, :, :]
+	print(expert_seqs.shape)
+
+	# training model
+	with tf.Session() as sess:
+		# model configuration
+		batch_size = 20
+		epoches    = 5
+		lr         = 1e-6
+		T          = [0., 10.]
+		S          = [[-1., 1.], [-1., 1.]]
+		layers     = [5]
+
+		ppg = RL_Hawkes_Generator(T=T, S=S, layers=layers, batch_size=batch_size, 
+			C=1., maximum=1e+3, keep_latest_k=None, lr=lr, eps=0)
+		ppg.train(sess, epoches, expert_seqs, trainplot=False)
+
+		# plot parameters map
+		from stppg import FreeDiffusionKernel
+		SIGMA_SHIFT = .1
+		SIGMA_SCALE = .25
+		beta, Ws, bs = sess.run([ppg.hawkes.beta, ppg.hawkes.Ws, ppg.hawkes.bs])
+		kernel = FreeDiffusionKernel(
+			layers=layers, beta=beta, C=1., Ws=Ws, bs=bs,
+			SIGMA_SHIFT=SIGMA_SHIFT, SIGMA_SCALE=SIGMA_SCALE)
+		utils.plot_spatial_kernel("results/kernel_rl.pdf", kernel, S=S, grid_size=50)

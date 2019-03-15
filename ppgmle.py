@@ -111,9 +111,9 @@ class MLE_Hawkes_Generator(object):
 
 if __name__ == "__main__":
     # Unittest example
-    seqs = np.load('../Spatio-Temporal-Point-Process-Simulator/results/free_hpp_Mar_10.npy')
+    seqs = np.load('../Spatio-Temporal-Point-Process-Simulator/results/free_hpp_Mar_14.npy')
     print(seqs[:10, :, :])
-    seqs = np.concatenate([seqs[:200, :, :], seqs[300:, :, :]], axis=0)
+    # seqs = np.concatenate([seqs[:200, :, :], seqs[300:, :, :]], axis=0)
     print(seqs.shape)
 
     # training model
@@ -121,7 +121,7 @@ if __name__ == "__main__":
         S          = [[-1., 1.], [-1., 1.]]
         T          = [0., 10.]
         batch_size = 20
-        epoches    = 10
+        epoches    = 5
         layers     = [5]
 
         ppg = MLE_Hawkes_Generator(
