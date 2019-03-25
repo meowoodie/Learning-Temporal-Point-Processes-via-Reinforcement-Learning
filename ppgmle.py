@@ -105,8 +105,8 @@ class MLE_Hawkes_Generator(object):
 
 if __name__ == "__main__":
     # Unittest example
+    
     seqs = np.load('../Spatio-Temporal-Point-Process-Simulator/data/apd.crime.perday.npy')
-    # seqs = np.load('../Spatio-Temporal-Point-Process-Simulator/results/hpp_Feb_25.npy')
     seqs = seqs[:100, :, :]
     print(seqs.shape)
 
@@ -124,7 +124,9 @@ if __name__ == "__main__":
             keep_latest_k=None, lr=1e-3, reg_scale=0.)
         
         ppg.train(sess, epoches, seqs)
-        ppg.hawkes.save_params_npy(sess, path="../Spatio-Temporal-Point-Process-Simulator/data/gaussian_mixture_params.npz")
+
+        ppg.hawkes.save_params_npy(sess, 
+            path="../Spatio-Temporal-Point-Process-Simulator/data/gaussian_mixture_params.npz")
         
 
         
