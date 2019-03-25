@@ -20,7 +20,7 @@ import utils
 import numpy as np
 import tensorflow as tf
 
-from stppg import FreeDiffusionKernel, HawkesLam, SpatialTemporalPointProcess
+from stppg import GaussianMixtureDiffusionKernel, HawkesLam, SpatialTemporalPointProcess
 
 class SpatialTemporalHawkes(object):
     """
@@ -30,28 +30,14 @@ class SpatialTemporalHawkes(object):
     points pattern.
     """
 
-    # DEPRECATED, FOR STANDARD DIFFUSION KERNEL
-    # def __init__(self, T, S, C=1., maximum=1e+4, verbose=False):
-    #     """
-    #     """
-    #     INIT_PARAM   = 1e-2
-    #     self.C       = C       # constant
-    #     self.T       = T       # time space
-    #     self.S       = S       # location space
-    #     self.maximum = maximum # upper bound of conditional intensity
-    #     self.mu      = tf.get_variable(name="mu", initializer=tf.constant(INIT_PARAM), dtype=tf.float32)
-    #     self.beta    = tf.get_variable(name="beta", initializer=tf.constant(INIT_PARAM), dtype=tf.float32)
-    #     self.sigma_x = tf.get_variable(name="sigma_x", initializer=tf.constant(INIT_PARAM), dtype=tf.float32)
-    #     self.sigma_y = tf.get_variable(name="sigma_y", initializer=tf.constant(INIT_PARAM), dtype=tf.float32)
-    #     self.verbose = verbose
-
-    def __init__(self, T, S, layers=[20, 20], Ws=None, bs=None, C=1., maximum=1e+3, verbose=False):
+    def __init__(self, T, S, layers=[20, 20], n_comp=5, C=1., maximum=1e+3, verbose=False):
         """
         """
         # constant hyper parameters
-        self.INIT_PARAM  = 1.
-        self.SIGMA_SHIFT = .1
-        self.SIGMA_SCALE = .25
+        self.INIT_PARAM  = .01
+        self.SIGMA_SHIFT = .05
+        self.SIGMA_SCALE = .1
+        self.MU_SCALE    = .05
         # configurations
         self.C       = C       # constant
         self.T       = T       # time space
@@ -61,85 +47,121 @@ class SpatialTemporalHawkes(object):
         # model parameters
         self.mu      = tf.get_variable(name="mu", initializer=tf.constant(0.1), dtype=tf.float32)
         self.beta    = tf.get_variable(name="beta", initializer=tf.constant(1.), dtype=tf.float32)
-        self.Ws      = []
-        self.bs      = []
+        self.Wss     = []
+        self.bss     = []
+        self.Wphis   = []
         # construct multi-layers neural networks
-        # - define the layers where 2 is for the input layer (x and y); And 3 is for the output layer (sigma_x, sigma_y, rho)
-        self.layers = [2] + layers + [3]
-        # - construct weight & bias matrix layer by layer
-        for i in range(len(self.layers)-1):
-            # random initialization
-            if Ws is None and bs is None:
-                W = tf.get_variable(name="W%d" % i, 
+        # - define the layers where 2 is for the input layer (x and y); 
+        #   And 5 is for the output layer (mu_x, mu_y, sigma_x, sigma_y, rho)
+        self.layers = [2] + layers + [5]
+        # - define the number of the components in Gaussian mixture diffusion kernel
+        self.n_comp = n_comp
+        # - construct component weighting vectors
+        for k in range(self.n_comp):
+            Wphi = tf.get_variable(name="Wphi%d" % k, 
+                initializer=self.INIT_PARAM * tf.random.normal(shape=[2, 1]),
+                dtype=tf.float32)
+            self.Wphis.append(Wphi)
+            # - construct weight & bias matrix layer by layer for each of Gaussian components
+            Ws = []
+            bs = []
+            for i in range(len(self.layers)-1):
+                # random initialization
+                W = tf.get_variable(name="W%d%d" % (k, i), 
                     initializer=self.INIT_PARAM * tf.random.normal(shape=[self.layers[i], self.layers[i+1]]),
                     dtype=tf.float32)
-                b = tf.get_variable(name="b%d" % i, 
+                b = tf.get_variable(name="b%d%d" % (k, i), 
                     initializer=self.INIT_PARAM * tf.random.normal(shape=[self.layers[i+1]]),
                     dtype=tf.float32)
-                self.Ws.append(W)
-                self.bs.append(b)
-
-    # DEPRECATED, FOR STANDARD DIFFUSION KERNEL
-    # def sampling(self, sess, batch_size):
-    #     # get current model parameters
-    #     mu, beta, sigma_x, sigma_y = sess.run([self.mu, self.beta, self.sigma_x, self.sigma_y])
-    #     print("[%s] mu=%.5f, beta=%.5f, sigma_x=%.5f, sigma_y=%.5f." % (arrow.now(), mu, beta, sigma_x, sigma_y), file=sys.stderr)
-    #     # sampling points given model parameters
-    #     kernel      = DiffusionKernel(beta=beta, sigma_x=sigma_x, sigma_y=sigma_y)
-    #     lam         = HawkesLam(mu, kernel, maximum=self.maximum)
-    #     pp          = SpatialTemporalPointProcess(lam)
-    #     seqs, sizes = pp.generate(T=self.T, S=self.S, batch_size=batch_size, verbose=self.verbose)
-    #     return seqs
+                Ws.append(W)
+                bs.append(b)
+            self.Wss.append(Ws)
+            self.bss.append(bs)
 
     def sampling(self, sess, batch_size):
         """fetch model parameters, and generate samples accordingly."""
         # get current model parameters
         mu, beta = sess.run([self.mu, self.beta])
-        Ws       = sess.run(self.Ws)
-        bs       = sess.run(self.bs)
+        Wss      = sess.run(self.Wss)
+        bss      = sess.run(self.bss)
+        Wphis    = sess.run(self.Wphis)
         # construct kernel function and conditional intensity lambda
-        kernel   = FreeDiffusionKernel(
-            layers=self.layers[1:-1], beta=beta, C=self.C, Ws=Ws, bs=bs,
-            SIGMA_SHIFT=self.SIGMA_SHIFT, SIGMA_SCALE=self.SIGMA_SCALE)
+        kernel   = GaussianMixtureDiffusionKernel(
+            n_comp, layers=self.layers[1:-1], beta=beta, C=self.C, 
+            SIGMA_SHIFT=self.SIGMA_SHIFT, SIGMA_SCALE=self.SIGMA_SCALE, MU_SCALE=self.MU_SCALE,
+            Wss=Wss, bss=bss, Wphis=Wphis)
         lam      = HawkesLam(mu, kernel, maximum=self.maximum)
         # sampling points given model parameters
         pp       = SpatialTemporalPointProcess(lam)
         seqs, sizes = pp.generate(T=self.T, S=self.S, batch_size=batch_size, verbose=self.verbose)
         return seqs
 
-    def _nonlinear_mapping(self, x, y):
+    def _nonlinear_mapping(self, k, s):
         """nonlinear mapping from location space to parameters space"""
         # construct multi-layers neural networks
-        output = tf.expand_dims(tf.stack([x, y], axis=0), axis=0)
+        output = s # [n_his, 2]
         for i in range(len(self.layers)-1):
-            output = tf.nn.sigmoid(tf.nn.xw_plus_b(output, self.Ws[i], self.bs[i]))
+            output = tf.nn.sigmoid(tf.nn.xw_plus_b(output, self.Wss[k][i], self.bss[k][i])) # [n_his, n_b]
         # project to parameters space
-        sigma_x = output[0][0] * self.SIGMA_SCALE + self.SIGMA_SHIFT # sigma_x spans (SIGMA_SHIFT, SIGMA_SHIFT + SIGMA_SCALE)
-        sigma_y = output[0][1] * self.SIGMA_SCALE + self.SIGMA_SHIFT # sigma_y spans (SIGMA_SHIFT, SIGMA_SHIFT + SIGMA_SCALE)
-        rho     = output[0][2] * 2. - 1.                             # rho spans (-1, 1)
-        return sigma_x, sigma_y, rho
+        mu_x    = (output[:, 0] - 0.5) * 2 * self.MU_SCALE           # [n_his]: mu_x spans (-MU_SCALE, MU_SCALE)
+        mu_y    = (output[:, 1] - 0.5) * 2 * self.MU_SCALE           # [n_his]: mu_y spans (-MU_SCALE, MU_SCALE)
+        sigma_x = output[:, 2] * self.SIGMA_SCALE + self.SIGMA_SHIFT # [n_his]: sigma_x spans (SIGMA_SHIFT, SIGMA_SHIFT + SIGMA_SCALE)
+        sigma_y = output[:, 3] * self.SIGMA_SCALE + self.SIGMA_SHIFT # [n_his]: sigma_y spans (SIGMA_SHIFT, SIGMA_SHIFT + SIGMA_SCALE)
+        rho     = output[:, 4] * 1.5 - .75                           # [n_his]: rho spans (-.75, .75)
+        return mu_x, mu_y, sigma_x, sigma_y, rho
 
-    # DEPRECATED, FOR STANDARD DIFFUSION KERNEL
-    # def _kernel(self, delta_x, delta_y, delta_t, x, y, t):
-    #     return (self.C / (2 * np.pi * self.sigma_x * self.sigma_y * delta_t)) * \
-    #            tf.exp(- self.beta * delta_t - (tf.square(delta_x)/tf.square(self.sigma_x) + tf.square(delta_y)/tf.square(self.sigma_y)) / (2*delta_t))
+    def _gaussian_kernel(self, k, t, s, his_t, his_s):
+        """
+        A Gaussian diffusion kernel function based on the standard kernel function proposed 
+        by Musmeci and Vere-Jones (1992). The angle and shape of diffusion ellipse is able  
+        to vary according to the location. 
 
-    def _kernel(self, delta_x, delta_y, delta_t, x, y, t):
+        k indicates the k-th gaussian component that is used to compute the nonlinear mappings.  
         """
-        free difussion kernel function based on the standard diffusion kernel 
-        proposed by Musmeci and Vere-Jones (1992).
-        """
-        sigma_x, sigma_y, rho = self._nonlinear_mapping(x, y)
+        eps     = 1e-8            # IMPORTANT: Avoid delta_t be zero
+        delta_t = t - his_t + eps # [n_his]
+        delta_s = s - his_s       # [n_his, 2]
+        delta_x = delta_s[:, 0]   # [n_his]
+        delta_y = delta_s[:, 1]   # [n_his]
+        mu_x, mu_y, sigma_x, sigma_y, rho = self._nonlinear_mapping(k, his_s)
         return tf.exp(- self.beta * delta_t) * \
             (self.C / (2 * np.pi * sigma_x * sigma_y * delta_t * tf.sqrt(1 - tf.square(rho)))) * \
             tf.exp((- 1. / (2 * delta_t * (1 - tf.square(rho)))) * \
-                ((tf.square(delta_x) / tf.square(sigma_x)) + \
-                (tf.square(delta_y) / tf.square(sigma_y)) - \
-                (2 * rho * delta_x * delta_y / (sigma_x * sigma_y))))
+                ((tf.square(delta_x - mu_x) / tf.square(sigma_x)) + \
+                (tf.square(delta_y - mu_y) / tf.square(sigma_y)) - \
+                (2 * rho * (delta_x - mu_x) * (delta_y - mu_y) / (sigma_x * sigma_y))))
+    
+    def _softmax(self, s, k):
+        """
+        Gaussian mixture components are weighted by phi^k, which are computed by a softmax function, i.e., 
+        phi^k(x, y) = e^{[x y]^T w^k} / \sum_{i=1}^K e^{[x y]^T w^i}
+        """
+        # s:        [n_his, 2]
+        # Wphis[k]: [2, 1]
+        numerator   = tf.exp(tf.matmul(s, self.Wphis[k]))                        # [n_his, 1]
+        denominator = tf.concat([ 
+            tf.exp(tf.matmul(s, self.Wphis[i])) 
+            for i in range(self.n_comp) ], axis=1)                               # [n_his, K=n_comp]
+        phis        = tf.squeeze(numerator) / tf.reduce_sum(denominator, axis=1) # [n_his]
+        return phis
+    
+    def _gaussian_mixture_kernel(self, t, s, his_t, his_s):
+        """
+        A Gaussian mixture diffusion kernel function is superposed by multiple Gaussian diffusion 
+        kernel function. The number of the Gaussian components is specified by n_comp. 
+        """
+        nus = []
+        for k in range(self.n_comp):
+            phi = self._softmax(his_s, k)                            # [n_his]             
+            nu  = phi * self._gaussian_kernel(k, t, s, his_t, his_s) # [n_his]
+            nu  = tf.expand_dims(nu, -1)                             # [n_his, 1]
+            nus.append(nu)                                           # K * [n_his, 1]
+        nus = tf.concat(nus, axis=1)      # [n_his, K]
+        return tf.reduce_sum(nus, axis=1) # [n_his]
 
-    def _lambda(self, x, y, t, x_his, y_his, t_his):
+    def _lambda(self, t, s, his_t, his_s):
         """lambda function for the Hawkes process."""
-        lam = self.mu + tf.reduce_sum(self._kernel(x - x_his, y - y_his, t - t_his, x, y, t), axis=0)
+        lam = self.mu + tf.reduce_sum(self._gaussian_kernel(0, t, s, his_t, his_s), axis=0)
         return lam
 
     def log_conditional_pdf(self, points, keep_latest_k=None):
@@ -149,21 +171,23 @@ class SpatialTemporalHawkes(object):
         # number of the points
         len_points          = tf.shape(points)[0]
         # variables for calculating triggering probability
-        x, y, t             = points[-1, 1],  points[-1, 2],  points[-1, 0]
-        x_his, y_his, t_his = points[:-1, 1], points[:-1, 2], points[:-1, 0]
+        # x, y, t             = points[-1, 1],  points[-1, 2],  points[-1, 0]
+        # x_his, y_his, t_his = points[:-1, 1], points[:-1, 2], points[:-1, 0]
+        s, t         = points[-1, 1:], points[-1, 0]
+        his_s, his_t = points[:-1, 1:], points[:-1, 0]
 
         def pdf_no_history():
-            return tf.log(tf.clip_by_value(self._lambda(x, y, t, x_his, y_his, t_his), 1e-8, 1e+10))
+            return tf.log(tf.clip_by_value(self._lambda(t, s, his_t, his_s), 1e-8, 1e+10))
         
         def pdf_with_history():
             # triggering probability
-            log_trig_prob = tf.log(tf.clip_by_value(self._lambda(x, y, t, x_his, y_his, t_his), 1e-8, 1e+10))
+            log_trig_prob = tf.log(tf.clip_by_value(self._lambda(t, s, his_t, his_s), 1e-8, 1e+10))
             # variables for calculating tail probability
             tn, ti        = points[-2, 0], points[:-1, 0]
             t_ti, tn_ti   = t - ti, tn - ti
             # tail probability
             log_tail_prob = - \
-                self.mu * (t - t_his[-1]) * utils.lebesgue_measure(self.S) - \
+                self.mu * (t - his_t[-1]) * utils.lebesgue_measure(self.S) - \
                 tf.reduce_sum(tf.scan(
                     lambda a, i: self.C * (tf.exp(- self.beta * tn_ti[i]) - tf.exp(- self.beta * t_ti[i])) / \
                         tf.clip_by_value(self.beta, 1e-8, 1e+10),
@@ -179,8 +203,15 @@ class SpatialTemporalHawkes(object):
         log_cond_pdf = tf.cond(tf.less(len_points, 2), 
             pdf_no_history,   # if there is only one point in the sequence
             pdf_with_history) # if there is more than one point in the sequence
-
         return log_cond_pdf
+
+    def save_params_npy(self, sess, path):
+        """save parameters into numpy file."""
+        Wss      = sess.run(self.Wss)
+        bss      = sess.run(self.bss)
+        Wphis    = sess.run(self.Wphis)
+        mu, beta = sess.run([self.mu, self.beta])
+        np.savez(path, Wss=Wss, bss=bss, Wphis=Wphis, mu=mu, beta=beta)
 
 
 
@@ -385,19 +416,32 @@ if __name__ == "__main__":
     tf.set_random_seed(1)
 
     with tf.Session() as sess:
-        hawkes = SpatialTemporalHawkes(T=[0., 10.], S=[[-1., 1.], [-1., 1.]], layers=[20, 20], maximum=1e+3, verbose=True)
+        hawkes = SpatialTemporalHawkes(
+            T=[0., 10.], S=[[-1., 1.], [-1., 1.]], 
+            layers=[5], n_comp=5, C=1., maximum=1e+3, verbose=True)
 
         points = tf.constant([
-            [ 0.24222693,  0.40847074,  0.03159241],
-            [ 0.56548731, -0.6061974,   0.31062581],
-            [ 0.85899771,  0.65192706, -0.34560846],
-            [ 0.94222693,  0.40847074,  0.03159241],
-            [ 1.26548731, -0.6061974,   0.31062581],
-            [ 1.35899771,  0.65192706, -0.34560846],
-            [ 1.85899771,  0.25192701, -0.24560832]], dtype=tf.float32) 
+            [ 1.16898147e-02,  1.45831794e-01, -3.05314839e-01],
+            [ 4.81481478e-02, -1.25229925e-01,  8.72766301e-02],
+            [ 1.13194443e-01, -3.87020826e-01,  2.80696362e-01],
+            [ 1.60300925e-01, -2.42807735e-02, -5.64230382e-01],
+            [ 1.64004624e-01,  7.10764453e-02, -1.77927762e-01],
+            [ 1.64236113e-01,  6.51166216e-02, -6.82414293e-01],
+            [ 2.05671296e-01, -4.48017061e-01,  5.36620915e-01],
+            [ 2.12152779e-01, -3.20064761e-02, -2.08911732e-01]], dtype=tf.float32) 
 
         init_op = tf.global_variables_initializer()
         sess.run(init_op)
+
+        # t = points[-1, 0]
+        # s = points[-1, 1:]
+        # his_t = points[:-1, 0]
+        # his_s = points[:-1, 1:]
+
+        # res = sess.run(hawkes.log_conditional_pdf(points))
+        # res = sess.run(hawkes._lambda(t, s, his_t, his_s))
+        # res = sess.run(hawkes._softmax(his_s, 0))
+        # res = sess.run(hawkes._gaussian_kernel(0, t, s, his_t, his_s))
 
         # test log conditional pdf
         r = tf.scan(
@@ -406,6 +450,6 @@ if __name__ == "__main__":
             initializer=np.array(0., dtype=np.float32))
         print(sess.run(r))
 
-        # test sampling
-        seqs = hawkes.sampling(sess, batch_size=10)
-        print(seqs)
+        # # test sampling
+        # seqs = hawkes.sampling(sess, batch_size=10)
+        # print(seqs)
