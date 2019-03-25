@@ -87,7 +87,7 @@ class SpatialTemporalHawkes(object):
         Wphis    = sess.run(self.Wphis)
         # construct kernel function and conditional intensity lambda
         kernel   = GaussianMixtureDiffusionKernel(
-            n_comp, layers=self.layers[1:-1], beta=beta, C=self.C, 
+            self.n_comp, layers=self.layers[1:-1], beta=beta, C=self.C, 
             SIGMA_SHIFT=self.SIGMA_SHIFT, SIGMA_SCALE=self.SIGMA_SCALE, MU_SCALE=self.MU_SCALE,
             Wss=Wss, bss=bss, Wphis=Wphis)
         lam      = HawkesLam(mu, kernel, maximum=self.maximum)
