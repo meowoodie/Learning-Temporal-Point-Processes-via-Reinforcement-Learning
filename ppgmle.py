@@ -121,7 +121,7 @@ if __name__ == "__main__":
         ppg = MLE_Hawkes_Generator(
             T=T, S=S, layers=layers, n_comp=5,
             batch_size=batch_size, data_dim=3, 
-            keep_latest_k=None, lr=1e-3, reg_scale=0.)
+            keep_latest_k=None, lr=1e-2, reg_scale=0.)
         
         ppg.train(sess, epoches, seqs)
 
