@@ -101,6 +101,8 @@ class MLE_Hawkes_Generator(object):
             print('[%s] Epoch %d (n_train_batches=%d, batch_size=%d)' % (arrow.now(), epoch, n_batches, batch_size), file=sys.stderr)
             print('[%s] Training cost:\t%f' % (arrow.now(), avg_train_cost), file=sys.stderr)
 
+            # print(sess.run(self.hawkes.Wss[0][0]))
+
 
 
 if __name__ == "__main__":
@@ -121,7 +123,7 @@ if __name__ == "__main__":
         ppg = MLE_Hawkes_Generator(
             T=T, S=S, layers=layers, n_comp=5,
             batch_size=batch_size, data_dim=3, 
-            keep_latest_k=None, lr=1e-2, reg_scale=0.)
+            keep_latest_k=None, lr=5e-2, reg_scale=0.)
         
         ppg.train(sess, epoches, seqs)
 
