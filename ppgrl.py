@@ -1,3 +1,4 @@
+import os
 import sys
 import arrow
 import utils
@@ -7,6 +8,8 @@ import tensorflow as tf
 import matplotlib.pyplot as plt
 
 from tfgen import SpatialTemporalHawkes, MarkedSpatialTemporalLSTM
+
+os.environ['KMP_DUPLICATE_LIB_OK']='True'
 
 class RL_Hawkes_Generator(object):
     """
@@ -492,7 +495,7 @@ if __name__ == "__main__":
         # model configuration
         batch_size = 10
         epoches    = 5
-        lr         = 1e-3
+        lr         = 1e-5
         T          = [0., 10.]
         S          = [[-1., 1.], [-1., 1.]]
         layers     = [5]
