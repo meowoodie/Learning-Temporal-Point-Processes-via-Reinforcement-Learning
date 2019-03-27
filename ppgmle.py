@@ -128,7 +128,7 @@ if __name__ == "__main__":
         ppg.train(sess, epoches, seqs)
 
         ppg.hawkes.save_params_npy(sess, 
-            path="../Spatio-Temporal-Point-Process-Simulator/data/gaussian_mixture_params.npz")
+            path="../Spatio-Temporal-Point-Process-Simulator/data/mle_gaussian_mixture_params.npz")
         
 
         

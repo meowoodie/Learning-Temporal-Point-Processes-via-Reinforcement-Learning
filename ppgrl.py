@@ -478,36 +478,31 @@ class RL_LSTM_Generator(object):
             print('[%s] Testing cost:\t%f' % (arrow.now(), avg_test_cost), file=sys.stderr)
 
 if __name__ == "__main__":
-	# generate expert sequences
+	# Unittest example
+
 	# np.random.seed(0)
 	# tf.set_random_seed(1)
 
-    expert_seqs = np.load('../Spatio-Temporal-Point-Process-Simulator/results/free_hpp_Mar_14.npy')
+    expert_seqs = np.load('../Spatio-Temporal-Point-Process-Simulator/data/apd.crime.perday.npy')
+    expert_seqs = expert_seqs[:100, :, :]
     print(expert_seqs.shape)
 
     # training model
     with tf.Session() as sess:
         # model configuration
-        batch_size = 50
+        batch_size = 10
         epoches    = 5
-        lr         = 1e-4
+        lr         = 1e-3
         T          = [0., 10.]
         S          = [[-1., 1.], [-1., 1.]]
         layers     = [5]
         n_comp     = 5
 
-        ppg = RL_Hawkes_Generator(T=T, S=S, layers=layers, n_comp=n_comp, batch_size=batch_size, 
+        ppg = RL_Hawkes_Generator(
+            T=T, S=S, layers=layers, n_comp=n_comp, batch_size=batch_size, 
             C=1., maximum=1e+3, keep_latest_k=None, lr=lr, eps=0)
+
         ppg.train(sess, epoches, expert_seqs, trainplot=False)
 
-        # plot parameters map
-        from stppg import FreeDiffusionKernel
-        SIGMA_SHIFT = .1
-        SIGMA_SCALE = .25
-        beta, Ws, bs = sess.run([ppg.hawkes.beta, ppg.hawkes.Ws, ppg.hawkes.bs])
-        kernel = FreeDiffusionKernel(
-            layers=layers, beta=beta, C=1., Ws=Ws, bs=bs,
-            SIGMA_SHIFT=SIGMA_SHIFT, SIGMA_SCALE=SIGMA_SCALE)
-        utils.plot_spatial_kernel("results/kernel_rl.pdf", kernel, S=S, grid_size=50)
-        print(Ws)
-        print(bs)
+        ppg.hawkes.save_params_npy(sess, 
+            path="../Spatio-Temporal-Point-Process-Simulator/data/rl_gaussian_mixture_params.npz")
