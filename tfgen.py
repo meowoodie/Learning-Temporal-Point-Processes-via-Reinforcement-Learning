@@ -186,6 +186,7 @@ class SpatialTemporalHawkes(object):
             tn, ti        = points[-2, 0], points[:-1, 0]
             t_ti, tn_ti   = t - ti, tn - ti
             # tail probability
+            # TODO: change to gaussian mixture (add phi)
             log_tail_prob = - \
                 self.mu * (t - his_t[-1]) * utils.lebesgue_measure(self.S) - \
                 tf.reduce_sum(tf.scan(
