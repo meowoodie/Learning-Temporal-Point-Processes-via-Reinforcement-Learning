@@ -223,6 +223,12 @@ class DataAdapter():
         _y = (y - self.ylim[0]) / (self.ylim[1] - self.ylim[0]) * (self.S[1][1] - self.S[1][0]) + self.S[1][0]
         return np.array([_x, _y])
 
+    def restore_location(self, x, y):
+        """restore a single data location back to the its original range"""
+        _x = (x - self.S[0][0]) / (self.S[0][1] - self.S[0][0]) * (self.xlim[1] - self.xlim[0]) + self.xlim[0]
+        _y = (y - self.S[1][0]) / (self.S[1][1] - self.S[1][0]) * (self.ylim[1] - self.ylim[0]) + self.ylim[0]
+        return np.array([_x, _y])
+
 
 
 def spatial_intensity_on_map(
@@ -236,8 +242,13 @@ def spatial_intensity_on_map(
     ngrid=100):
     """Plot spatial intensity at time t over the entire map given its coordinates limits."""
     # data preparation
-    seq_t, seq_s = data[:, 0], data[:, 1:]
-    sub_seq_t = seq_t[seq_t < t]
+    # - remove the first element in the seq, since t_0 is always 0, 
+    #   which will cause numerical issue when computing lambda value
+    seqs = da.normalize(data)[:, 1:, :] 
+    seq  = seqs[0]                          # only use the first seq
+    seq  = seq[np.nonzero(seq[:, 0])[0], :] # only retain nonzero values
+    seq_t, seq_s = seq[:, 0], seq[:, 1:] 
+    sub_seq_t = seq_t[seq_t < t]            # only retain values before time t.
     sub_seq_s = seq_s[:len(sub_seq_t)]
     # generate spatial grid polygons
     xmin, xmax, width       = xlim[0], xlim[1], xlim[1] - xlim[0] 
@@ -268,16 +279,26 @@ def spatial_intensity_on_map(
         x_left_origin  += grid_width
         x_right_origin += grid_width
     # convert polygons to geopandas object
-    geo_df   = geopandas.GeoSeries(polygons) 
-    # TODO: Add marks for the past events
+    geo_df = geopandas.GeoSeries(polygons) 
+    # init map
+    _map   = folium.Map(location=[sum(xlim)/2., sum(ylim)/2.], zoom_start=12, zoom_control=True)
     # plot polygons on the map
-    map = folium.Map(location=[sum(xlim)/2., sum(ylim)/2.], zoom_start=12, zoom_control=True)
-    cm  = branca.colormap.linear.YlOrRd_09.scale(min(lam_dict.values()), max(lam_dict.values())) 
+    lam_cm = branca.colormap.linear.YlOrRd_09.scale(min(lam_dict.values()), max(lam_dict.values())) # colorbar
+    poi_cm = branca.colormap.linear.PuBu_09.scale(min(sub_seq_t), max(sub_seq_t)) # colorbar
     folium.GeoJson(
         data = geo_df.to_json(),
         style_function = lambda feature: {
-            'fillColor':   cm(lam_dict[feature['id']]),
+            'fillColor':   lam_cm(lam_dict[feature['id']]),
             'fillOpacity': .5,
-            'weight':      0.}     
-    ).add_to(map)
-    map.save(path)
+            'weight':      0.}).add_to(_map)
+    # plot markers on the map
+    for i in range(len(sub_seq_t)):
+        x, y = da.restore_location(*sub_seq_s[i])
+        folium.Circle(
+            location=[x, y],
+            radius=10, # sub_seq_t[i] * 100,
+            color=poi_cm(sub_seq_t[i]),
+            fill=True,
+            fill_color='blue').add_to(_map)
+    # save the map
+    _map.save(path)
