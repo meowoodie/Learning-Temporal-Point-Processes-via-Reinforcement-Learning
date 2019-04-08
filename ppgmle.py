@@ -108,8 +108,15 @@ class MLE_Hawkes_Generator(object):
 if __name__ == "__main__":
     # Unittest example
     
-    seqs = np.load('../Spatio-Temporal-Point-Process-Simulator/data/apd.crime.perday.npy')
-    seqs = seqs[:100, :, :]
+    # seqs = np.load('../Spatio-Temporal-Point-Process-Simulator/data/apd.crime.perday.npy')
+    # seqs = seqs[:100, :, :]
+    # print(seqs.shape)
+
+    data = np.load('../Spatio-Temporal-Point-Process-Simulator/data/apd.robbery.perweek.npy')
+    da   = utils.DataAdapter(init_data=data)
+    seqs = da.normalize(data)
+    seqs = seqs[:200, 1:, :] # remove the first element in each seqs, since t = 0
+    print(da)
     print(seqs.shape)
 
     # training model
@@ -121,7 +128,7 @@ if __name__ == "__main__":
         layers     = [5]
 
         ppg = MLE_Hawkes_Generator(
-            T=T, S=S, layers=layers, n_comp=5,
+            T=T, S=S, layers=layers, n_comp=10,
             batch_size=batch_size, data_dim=3, 
             keep_latest_k=None, lr=5e-2, reg_scale=0.)
         

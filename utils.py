@@ -228,6 +228,11 @@ class DataAdapter():
         _x = (x - self.S[0][0]) / (self.S[0][1] - self.S[0][0]) * (self.xlim[1] - self.xlim[0]) + self.xlim[0]
         _y = (y - self.S[1][0]) / (self.S[1][1] - self.S[1][0]) * (self.ylim[1] - self.ylim[0]) + self.ylim[0]
         return np.array([_x, _y])
+    
+    def __str__(self):
+        raw_data_str = "raw data example:\n%s\n" % self.data[:1]
+        nor_data_str = "normalized data example:\n%s" % self.normalize(self.data[:1])
+        return raw_data_str + nor_data_str
 
 
 
