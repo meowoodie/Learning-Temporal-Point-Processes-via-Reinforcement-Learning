@@ -171,8 +171,6 @@ class SpatialTemporalHawkes(object):
         # number of the points
         len_points          = tf.shape(points)[0]
         # variables for calculating triggering probability
-        # x, y, t             = points[-1, 1],  points[-1, 2],  points[-1, 0]
-        # x_his, y_his, t_his = points[:-1, 1], points[:-1, 2], points[:-1, 0]
         s, t         = points[-1, 1:], points[-1, 0]
         his_s, his_t = points[:-1, 1:], points[:-1, 0]
 
@@ -188,7 +186,7 @@ class SpatialTemporalHawkes(object):
             # tail probability
             # TODO: change to gaussian mixture (add phi)
             log_tail_prob = - \
-                self.mu * (t - his_t[-1]) * utils.lebesgue_measure(self.S) - \
+                self.mu * (t - tn) * utils.lebesgue_measure(self.S) - \
                 tf.reduce_sum(tf.scan(
                     lambda a, i: self.C * (tf.exp(- self.beta * tn_ti[i]) - tf.exp(- self.beta * t_ti[i])) / \
                         tf.clip_by_value(self.beta, 1e-8, 1e+10),
