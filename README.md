@@ -96,7 +96,11 @@ Below are generated test actions.
         [ 0.        ,  0.        ,  0.        ]], dtype=float32)
 ```
 
-> Exponential Q-Q Plot
+Experimental results
+---
+
+![](https://github.com/meowoodie/Imitation-Learning-for-Point-Process/blob/master/imgs/atl-robbery-1.gif)
+> Robbery in Atlanta
 
 References
 ---
