@@ -45,14 +45,15 @@ class MLE_Hawkes_Generator(object):
         loglikli = 0.
         for b in range(batch_size):
             seq       = self.input_seqs[b, :, :]
-            mask_t    = tf.cast(seq[:, 0] > 0, tf.float32)
-            trunc_seq = tf.boolean_mask(seq, mask_t)
-            seq_len   = tf.shape(trunc_seq)[0]
-            # calculate the log conditional pdf for each of data points in the sequence.
-            loglikli += tf.reduce_sum(tf.scan(
-                lambda a, i: self.hawkes.log_conditional_pdf(trunc_seq[:i, :], keep_latest_k=keep_latest_k),
-                tf.range(1, seq_len+1), # from the first point to the last point
-                initializer=np.array(0., dtype=np.float32)))
+            # mask_t    = tf.cast(seq[:, 0] > 0, tf.float32)
+            # trunc_seq = tf.boolean_mask(seq, mask_t)
+            # seq_len   = tf.shape(trunc_seq)[0]
+            # # calculate the log conditional pdf for each of data points in the sequence.
+            # loglikli += tf.reduce_sum(tf.scan(
+            #     lambda a, i: self.hawkes.log_conditional_pdf(trunc_seq[:i, :], keep_latest_k=keep_latest_k),
+            #     tf.range(1, seq_len+1), # from the first point to the last point
+            #     initializer=np.array(0., dtype=np.float32)))
+            loglikli += self.hawkes.log_likelihood(seq)
         return loglikli
 
     def train(self, sess, 
@@ -107,15 +108,12 @@ class MLE_Hawkes_Generator(object):
 
 if __name__ == "__main__":
     # Unittest example
-    
-    # seqs = np.load('../Spatio-Temporal-Point-Process-Simulator/data/apd.crime.perday.npy')
-    # seqs = seqs[:100, :, :]
-    # print(seqs.shape)
 
-    data = np.load('../Spatio-Temporal-Point-Process-Simulator/data/apd.robbery.perweek.npy')
+    # data = np.load('../Spatio-Temporal-Point-Process-Simulator/data/apd.robbery.permonth.npy')
+    data = np.load('../Spatio-Temporal-Point-Process-Simulator/data/northcal.earthquake.permonth.npy')
     da   = utils.DataAdapter(init_data=data)
     seqs = da.normalize(data)
-    seqs = seqs[:200, 1:, :] # remove the first element in each seqs, since t = 0
+    seqs = seqs[:, 1:, :] # remove the first element in each seqs, since t = 0
     print(da)
     print(seqs.shape)
 
@@ -124,18 +122,15 @@ if __name__ == "__main__":
         S          = [[-1., 1.], [-1., 1.]]
         T          = [0., 10.]
         batch_size = 10
-        epoches    = 5
+        epoches    = 10
         layers     = [5]
 
         ppg = MLE_Hawkes_Generator(
-            T=T, S=S, layers=layers, n_comp=10,
+            T=T, S=S, layers=layers, n_comp=5,
             batch_size=batch_size, data_dim=3, 
-            keep_latest_k=None, lr=5e-2, reg_scale=0.)
+            keep_latest_k=None, lr=1e-1, reg_scale=0.)
         
         ppg.train(sess, epoches, seqs)
 
         ppg.hawkes.save_params_npy(sess, 
             path="../Spatio-Temporal-Point-Process-Simulator/data/mle_gaussian_mixture_params.npz")
-        
-
-        

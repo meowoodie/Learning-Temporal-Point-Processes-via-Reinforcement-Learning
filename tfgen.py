@@ -34,7 +34,7 @@ class SpatialTemporalHawkes(object):
         """
         """
         # constant hyper parameters
-        self.INIT_PARAM  = .1
+        self.INIT_PARAM  = .01
         self.SIGMA_SHIFT = .05
         self.SIGMA_SCALE = .2
         self.MU_SCALE    = .01
@@ -57,7 +57,6 @@ class SpatialTemporalHawkes(object):
         # - define the number of the components in Gaussian mixture diffusion kernel
         self.n_comp = n_comp
         # - construct component weighting vectors
-        print("n_comp", n_comp)
         for k in range(self.n_comp):
             Wphi = tf.get_variable(name="Wphi%d" % k, 
                 initializer=self.INIT_PARAM * tf.random.normal(shape=[2, 1]),
