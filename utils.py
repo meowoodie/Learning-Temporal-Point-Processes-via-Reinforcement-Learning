@@ -237,21 +237,23 @@ class DataAdapter():
 
 
 def spatial_intensity_on_map(
-    path, # html saving path
-    da,   # data adapter object defined in utils.py
-    lam,  # lambda object defined in stppg.py
-    data, # a sequence of data points [seq_len, 3] happened in the past
-    t,    # observation moment (t)
-    xlim, # observation x range
-    ylim, # observation y range
+    path,    # html saving path
+    da,      # data adapter object defined in utils.py
+    lam,     # lambda object defined in stppg.py
+    data,    # a sequence of data points [seq_len, 3] happened in the past
+    seq_ind, # index of sequence for visualization 
+    t,       # normalized observation moment (t)
+    xlim,    # real observation x range
+    ylim,    # real observation y range
     ngrid=100):
     """Plot spatial intensity at time t over the entire map given its coordinates limits."""
     # data preparation
     # - remove the first element in the seq, since t_0 is always 0, 
     #   which will cause numerical issue when computing lambda value
     seqs = da.normalize(data)[:, 1:, :] 
-    seq  = seqs[0]                          # only use the first seq
+    seq  = seqs[seq_ind]                    # visualize the sequence indicated by seq_ind
     seq  = seq[np.nonzero(seq[:, 0])[0], :] # only retain nonzero values
+    print(seq)
     seq_t, seq_s = seq[:, 0], seq[:, 1:] 
     sub_seq_t = seq_t[seq_t < t]            # only retain values before time t.
     sub_seq_s = seq_s[:len(sub_seq_t)]
@@ -273,7 +275,7 @@ def spatial_intensity_on_map(
             # append the intensity value to the list
             s = da.normalize_location((x_left_origin + x_right_origin) / 2., (y_top + y_bottom) / 2.)
             v = lam.value(t, sub_seq_t, s, sub_seq_s)
-            lam_dict[str(_id)] = 0 if np.isnan(v) else v
+            lam_dict[str(_id)] = np.log(v)
             _id += 1
             # append polygon to the list
             polygons.append(Polygon(
@@ -288,8 +290,9 @@ def spatial_intensity_on_map(
     # init map
     _map   = folium.Map(location=[sum(xlim)/2., sum(ylim)/2.], zoom_start=12, zoom_control=True)
     # plot polygons on the map
-    lam_cm = branca.colormap.linear.YlOrRd_09.scale(min(lam_dict.values()), max(lam_dict.values())) # colorbar
-    poi_cm = branca.colormap.linear.PuBu_09.scale(min(sub_seq_t), max(sub_seq_t)) # colorbar
+    print(min(lam_dict.values()), max(lam_dict.values()))
+    lam_cm = branca.colormap.linear.YlOrRd_09.scale(np.log(3), np.log(150))       # colorbar for intensity values
+    poi_cm = branca.colormap.linear.PuBu_09.scale(min(sub_seq_t), max(sub_seq_t)) # colorbar for lasting time of points
     folium.GeoJson(
         data = geo_df.to_json(),
         style_function = lambda feature: {
