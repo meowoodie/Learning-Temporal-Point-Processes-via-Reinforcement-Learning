@@ -57,6 +57,7 @@ class SpatialTemporalHawkes(object):
         # - define the number of the components in Gaussian mixture diffusion kernel
         self.n_comp = n_comp
         # - construct component weighting vectors
+        print("n_comp", n_comp)
         for k in range(self.n_comp):
             Wphi = tf.get_variable(name="Wphi%d" % k, 
                 initializer=self.INIT_PARAM * tf.random.normal(shape=[2, 1]),
@@ -138,11 +139,11 @@ class SpatialTemporalHawkes(object):
         """
         # s:        [n_his, 2]
         # Wphis[k]: [2, 1]
-        numerator   = tf.exp(tf.matmul(s, self.Wphis[k]))                        # [n_his, 1]
+        numerator   = tf.exp(tf.matmul(s, self.Wphis[k]))                 # [n_his, 1]
         denominator = tf.concat([ 
             tf.exp(tf.matmul(s, self.Wphis[i])) 
-            for i in range(self.n_comp) ], axis=1)                               # [n_his, K=n_comp]
-        phis        = tf.squeeze(numerator) / tf.reduce_sum(denominator, axis=1) # [n_his]
+            for i in range(self.n_comp) ], axis=1)                        # [n_his, K=n_comp]
+        phis = tf.squeeze(numerator) / tf.reduce_sum(denominator, axis=1) # [n_his]
         return phis
     
     def _gaussian_mixture_kernel(self, t, s, his_t, his_s):
@@ -161,15 +162,15 @@ class SpatialTemporalHawkes(object):
 
     def _lambda(self, t, s, his_t, his_s):
         """lambda function for the Hawkes process."""
-        lam = self.mu + tf.reduce_sum(self._gaussian_kernel(0, t, s, his_t, his_s), axis=0)
+        lam = self.mu + tf.reduce_sum(self._gaussian_mixture_kernel(t, s, his_t, his_s))
         return lam
 
     def log_conditional_pdf(self, points, keep_latest_k=None):
         """log pdf conditional on history."""
         if keep_latest_k is not None: 
-            points          = points[-keep_latest_k:, :]
+            points   = points[-keep_latest_k:, :]
         # number of the points
-        len_points          = tf.shape(points)[0]
+        len_points   = tf.shape(points)[0]
         # variables for calculating triggering probability
         s, t         = points[-1, 1:], points[-1, 0]
         his_s, his_t = points[:-1, 1:], points[:-1, 0]
@@ -204,12 +205,36 @@ class SpatialTemporalHawkes(object):
             pdf_with_history) # if there is more than one point in the sequence
         return log_cond_pdf
 
+    def log_likelihood(self, points):
+        """log likelihood of given points"""
+        loglikli  = 0.                                    # loglikelihood initialization
+        mask_t    = tf.cast(points[:, 0] > 0, tf.float32) # time mask
+        trunc_seq = tf.boolean_mask(points, mask_t)       # truncate the sequence and get the valid part
+        seq_len   = tf.shape(trunc_seq)[0]                # length of the sequence
+        # term 1: product of lambda
+        loglikli += tf.reduce_sum(tf.scan(
+            lambda a, i: tf.log(self._lambda(trunc_seq[i, 0], trunc_seq[i, 1:], trunc_seq[:i, 0], trunc_seq[:i, 1:])),
+            tf.range(seq_len),
+            initializer=np.array(0., dtype=np.float32)))
+        # term 2: 1 - F^*(T)
+        ti        = points[:, 0]
+        zero_ti   = 0 - ti
+        T_ti      = self.T[1] - ti
+        loglikli -= tf.reduce_sum(tf.scan(
+            lambda a, i: self.C * (tf.exp(- self.beta * zero_ti[i]) - tf.exp(- self.beta * T_ti[i])) / \
+                tf.clip_by_value(self.beta, 1e-8, 1e+10),
+            tf.range(tf.shape(ti)[0]),
+            initializer=np.array(0., dtype=np.float32)))
+        return loglikli
+
     def save_params_npy(self, sess, path):
         """save parameters into numpy file."""
         Wss      = sess.run(self.Wss)
         bss      = sess.run(self.bss)
         Wphis    = sess.run(self.Wphis)
         mu, beta = sess.run([self.mu, self.beta])
+        print(Wss)
+        print(Wphis)
         np.savez(path, Wss=Wss, bss=bss, Wphis=Wphis, mu=mu, beta=beta)
 
 
@@ -417,7 +442,7 @@ if __name__ == "__main__":
     with tf.Session() as sess:
         hawkes = SpatialTemporalHawkes(
             T=[0., 10.], S=[[-1., 1.], [-1., 1.]], 
-            layers=[5], n_comp=5, C=1., maximum=1e+3, verbose=True)
+            layers=[5], n_comp=3, C=1., maximum=1e+3, verbose=True)
 
         points = tf.constant([
             [ 1.16898147e-02,  1.45831794e-01, -3.05314839e-01],
@@ -442,11 +467,12 @@ if __name__ == "__main__":
         # res = sess.run(hawkes._softmax(his_s, 0))
         # res = sess.run(hawkes._gaussian_kernel(0, t, s, his_t, his_s))
 
-        # test log conditional pdf
-        r = tf.scan(
-            lambda a, i: hawkes.log_conditional_pdf(points[:i, :]),
-            tf.range(1, tf.shape(points)[0]+1), # from the first point to the last point
-            initializer=np.array(0., dtype=np.float32))
+        # seq_len = tf.shape(points)[0]
+        # r = tf.scan(
+        #     lambda a, i: hawkes._lambda(points[i, 0], points[i, 1:], points[:i, 0], points[:i, 1:]), 
+        #     tf.range(seq_len), # from the first point to the last point
+        #     initializer=np.array(0., dtype=np.float32))
+        r = hawkes.log_likelihood(points)
         print(sess.run(r))
 
         # # test sampling
