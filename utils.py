@@ -288,7 +288,8 @@ def spatial_intensity_on_map(
     # convert polygons to geopandas object
     geo_df = geopandas.GeoSeries(polygons) 
     # init map
-    _map   = folium.Map(location=[sum(xlim)/2., sum(ylim)/2.], zoom_start=12, zoom_control=True)
+    # _map   = folium.Map(location=[sum(xlim)/2., sum(ylim)/2.], zoom_start=12, zoom_control=True)
+    _map   = folium.Map(location=[sum(xlim)/2., sum(ylim)/2.], zoom_start=6, zoom_control=True, tiles='Stamen Terrain')
     # plot polygons on the map
     print(min(lam_dict.values()), max(lam_dict.values()))
     lam_cm = branca.colormap.linear.YlOrRd_09.scale(np.log(3), np.log(150))       # colorbar for intensity values

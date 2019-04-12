@@ -110,7 +110,7 @@ if __name__ == "__main__":
     # Unittest example
 
     # data = np.load('../Spatio-Temporal-Point-Process-Simulator/data/apd.robbery.permonth.npy')
-    data = np.load('../Spatio-Temporal-Point-Process-Simulator/data/northcal.earthquake.permonth.npy')
+    data = np.load('../Spatio-Temporal-Point-Process-Simulator/data/northcal.earthquake.perseason.npy')
     da   = utils.DataAdapter(init_data=data)
     seqs = da.normalize(data)
     seqs = seqs[:, 1:, :] # remove the first element in each seqs, since t = 0
@@ -133,4 +133,4 @@ if __name__ == "__main__":
         ppg.train(sess, epoches, seqs)
 
         ppg.hawkes.save_params_npy(sess, 
-            path="../Spatio-Temporal-Point-Process-Simulator/data/mle_gaussian_mixture_params.npz")
+            path="../Spatio-Temporal-Point-Process-Simulator/data/earthquake_mle_gaussian_mixture_params.npz")

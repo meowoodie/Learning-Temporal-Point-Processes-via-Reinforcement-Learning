@@ -486,16 +486,20 @@ if __name__ == "__main__":
 	# np.random.seed(0)
 	# tf.set_random_seed(1)
 
-    expert_seqs = np.load('../Spatio-Temporal-Point-Process-Simulator/data/apd.crime.perday.npy')
-    expert_seqs = expert_seqs[:100, :, :]
-    print(expert_seqs.shape)
+    data = np.load('../Spatio-Temporal-Point-Process-Simulator/data/apd.robbery.permonth.npy')
+    # data = np.load('../Spatio-Temporal-Point-Process-Simulator/data/northcal.earthquake.perseason.npy')
+    da   = utils.DataAdapter(init_data=data)
+    seqs = da.normalize(data)
+    seqs = seqs[:, 1:, :] # remove the first element in each seqs, since t = 0
+    print(da)
+    print(seqs.shape)
 
     # training model
     with tf.Session() as sess:
         # model configuration
         batch_size = 10
         epoches    = 5
-        lr         = 1e-5
+        lr         = 1e-3
         T          = [0., 10.]
         S          = [[-1., 1.], [-1., 1.]]
         layers     = [5]
@@ -505,7 +509,7 @@ if __name__ == "__main__":
             T=T, S=S, layers=layers, n_comp=n_comp, batch_size=batch_size, 
             C=1., maximum=1e+3, keep_latest_k=None, lr=lr, eps=0)
 
-        ppg.train(sess, epoches, expert_seqs, trainplot=False)
+        ppg.train(sess, epoches, seqs, trainplot=False)
 
         ppg.hawkes.save_params_npy(sess, 
-            path="../Spatio-Temporal-Point-Process-Simulator/data/rl_gaussian_mixture_params.npz")
+            path="../Spatio-Temporal-Point-Process-Simulator/data/robbery_rl_gaussian_mixture_params.npz")
