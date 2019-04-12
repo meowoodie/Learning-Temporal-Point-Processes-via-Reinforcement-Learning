@@ -99,8 +99,9 @@ Below are generated test actions.
 Experimental results
 ---
 
-![](https://github.com/meowoodie/Imitation-Learning-for-Point-Process/blob/master/imgs/atl-robbery-1.gif)
-> Robbery in Atlanta
+ Robbery in Atlanta           | Earthquake in North California
+:----------------------------:|:----------------------------:
+![](https://github.com/meowoodie/Imitation-Learning-for-Point-Process/blob/master/imgs/atl-robbery-1.gif)  |  ![](https://github.com/meowoodie/Imitation-Learning-for-Point-Process/blob/master/imgs/cal-earthquake-1.gif)
 
 References
 ---
